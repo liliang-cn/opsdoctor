@@ -466,7 +466,7 @@ func ingestEntities(t *testing.T, s *Store, ents ...cortexdb.ToolEntityInput) {
 func TestDeclaredEndsAreRegisteredAsTheLinksSides(t *testing.T) {
 	s := openStore(t,
 		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs", "contains"}),
-		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"StoragePool"}, To: []string{"DRBDResource"}}}))
 
 	got, err := s.db.GetOntologySchema(context.Background(), cortexdb.OntologyGetRequest{SchemaID: ontologySchemaID})
 	if err != nil {
@@ -502,7 +502,7 @@ func TestDeclaredEndsAreRegisteredAsTheLinksSides(t *testing.T) {
 func TestDeclaredEndsMakeADirectionalTraversalWork(t *testing.T) {
 	s := openStore(t,
 		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
-		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"StoragePool"}, To: []string{"DRBDResource"}}}))
 	upsert(t, s,
 		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
 		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
@@ -562,8 +562,8 @@ func TestChangingARelationsEndsChangesTheFingerprint(t *testing.T) {
 		}
 		return s.vocabularyFingerprint()
 	}
-	a := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: "A", To: "B"}}))
-	b := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: "B", To: "A"}}))
+	a := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"A"}, To: []string{"B"}}}))
+	b := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"B"}, To: []string{"A"}}}))
 	if a == b {
 		t.Error("reversing a relation's ends produced the same fingerprint")
 	}
@@ -579,7 +579,7 @@ func TestChangingARelationsEndsChangesTheFingerprint(t *testing.T) {
 func TestDriftFindsRelationsAssertedBackwards(t *testing.T) {
 	s := openStore(t,
 		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
-		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"StoragePool"}, To: []string{"DRBDResource"}}}))
 	upsert(t, s,
 		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
 		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
@@ -606,7 +606,7 @@ func TestDriftFindsRelationsAssertedBackwards(t *testing.T) {
 func TestDriftIsSilentWhenTheEndsMatch(t *testing.T) {
 	s := openStore(t,
 		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
-		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"StoragePool"}, To: []string{"DRBDResource"}}}))
 	upsert(t, s,
 		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
 		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
@@ -627,7 +627,7 @@ func TestDriftIsSilentWhenTheEndsMatch(t *testing.T) {
 func TestARelationWithoutDeclaredEndsIsNeverMisdirected(t *testing.T) {
 	s := openStore(t,
 		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs", "related"}),
-		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: []string{"StoragePool"}, To: []string{"DRBDResource"}}}))
 	upsert(t, s,
 		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
 		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
@@ -650,5 +650,114 @@ func relate(t *testing.T, s *Store, from, to, edgeType string) {
 		Relations:  []cortexdb.ToolRelationInput{{From: from, To: to, Type: edgeType}},
 	}); err != nil {
 		t.Fatalf("upsert relation: %v", err)
+	}
+}
+
+// A relation polymorphic in one end is the common case in an ops vocabulary — a
+// Snapshot and a Backup both protect a Volume — and forcing it to a single type
+// would mean declaring something false or leaving the relation without ends at
+// all. cortexdb models it as an interface on the link side; the domain just
+// lists the types.
+func TestAPolymorphicEndAdmitsEveryTypeItLists(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Snapshot", "Backup", "Volume"}, []string{"protects"}),
+		WithRelationEnds([]RelationEnd{{
+			Name: "protects", From: []string{"Snapshot", "Backup"}, To: []string{"Volume"},
+		}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "snap-1", Type: "Snapshot"},
+		cortexdb.ToolEntityInput{Name: "backup-1", Type: "Backup"},
+		cortexdb.ToolEntityInput{Name: "vol-1", Type: "Volume"})
+	relate(t, s, "snap-1", "vol-1", "protects")
+	relate(t, s, "backup-1", "vol-1", "protects")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 0 {
+		t.Errorf("misdirected = %+v, want none — both types are declared sources", d.MisdirectedEdges)
+	}
+}
+
+// The set is still a constraint, not a shrug: a type the end does not list is
+// as wrong as a reversed edge.
+func TestAPolymorphicEndStillRejectsATypeItDoesNotList(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Snapshot", "Backup", "Volume"}, []string{"protects"}),
+		WithRelationEnds([]RelationEnd{{
+			Name: "protects", From: []string{"Snapshot", "Backup"}, To: []string{"Volume"},
+		}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "vol-1", Type: "Volume"},
+		cortexdb.ToolEntityInput{Name: "vol-2", Type: "Volume"})
+	relate(t, s, "vol-1", "vol-2", "protects")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 1 {
+		t.Fatalf("misdirected = %+v, want the Volume->Volume edge", d.MisdirectedEdges)
+	}
+}
+
+// A polymorphic end is registered as an interface those types implement, and
+// the traversal has to arrive at all of them. Registering it and then keeping
+// only nodes whose type is the interface's own name — which nothing is stored
+// as — is the failure this whole path exists to avoid.
+func TestAPolymorphicEndIsTraversableToEveryImplementor(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Snapshot", "Backup", "Volume"}, []string{"protects"}),
+		WithRelationEnds([]RelationEnd{{
+			Name: "protects", From: []string{"Snapshot", "Backup"}, To: []string{"Volume"},
+		}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "snap-1", Type: "Snapshot"},
+		cortexdb.ToolEntityInput{Name: "backup-1", Type: "Backup"},
+		cortexdb.ToolEntityInput{Name: "vol-1", Type: "Volume"})
+	relate(t, s, "snap-1", "vol-1", "protects")
+	relate(t, s, "backup-1", "vol-1", "protects")
+
+	protectors, err := s.db.ResolveObjectSet(context.Background(), cortexdb.ObjectSet{
+		Kind:   cortexdb.ObjectSetSearchAround,
+		Source: &cortexdb.ObjectSet{Kind: cortexdb.ObjectSetBase, ObjectType: "Volume"},
+		Link:   "protects_of",
+	})
+	if err != nil {
+		t.Fatalf("search around: %v", err)
+	}
+	if len(protectors) != 2 {
+		t.Errorf("walking back from the volume reached %d nodes, want the Snapshot and the Backup", len(protectors))
+	}
+}
+
+// Reordering the types within an end is not a different statement about the
+// domain, and treating it as one would make every reorder look like the graph
+// needs re-extracting.
+func TestReorderingTypesWithinAnEndDoesNotChangeTheFingerprint(t *testing.T) {
+	fingerprint := func(from ...string) string {
+		s := &Store{}
+		WithOntology("t", []string{"Snapshot", "Backup", "Volume"}, []string{"protects"})(s)
+		WithRelationEnds([]RelationEnd{{Name: "protects", From: from, To: []string{"Volume"}}})(s)
+		return s.vocabularyFingerprint()
+	}
+	if fingerprint("Snapshot", "Backup") != fingerprint("Backup", "Snapshot") {
+		t.Error("reordering the types in one end changed the fingerprint")
+	}
+	if fingerprint("Snapshot", "Backup") == fingerprint("Snapshot") {
+		t.Error("dropping a type from an end produced the same fingerprint")
+	}
+}
+
+// SDS declares seven source types for has_state. Printed whole they push the
+// shape that is actually wrong off the end of the line, which is the part a
+// reader came for.
+func TestAWideEndIsTrimmedForTheReportLine(t *testing.T) {
+	if got := summarizeEnd([]string{"A", "B"}); got != "A|B" {
+		t.Errorf("summarizeEnd = %q, want the whole short end", got)
+	}
+	if got := summarizeEnd([]string{"A", "B", "C", "D", "E"}); got != "A|B|C|+2 more" {
+		t.Errorf("summarizeEnd = %q, want the first three and a count", got)
 	}
 }

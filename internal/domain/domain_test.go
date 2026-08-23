@@ -320,3 +320,101 @@ func mustLoadTOML(t *testing.T, body string) *Domain {
 	}
 	return d
 }
+
+// An end may be one type or several. The single-string form is not sugar for a
+// one-element list — it is the form almost every relation wants, and requiring
+// from = ["StoragePool"] would make the common case pay for the rare one.
+func TestARelationEndTakesAStringOrAList(t *testing.T) {
+	d := mustLoadTOML(t, `
+entity_types = ["Snapshot", "Backup", "Volume", "StoragePool", "DRBDResource"]
+
+[[relation]]
+name = "protects"
+from = ["Snapshot", "Backup"]
+to   = "Volume"
+
+[[relation]]
+name = "backs"
+from = "StoragePool"
+to   = "DRBDResource"
+`)
+	if len(d.Relations) != 2 {
+		t.Fatalf("relations = %+v, want two", d.Relations)
+	}
+	if want := []string{"Snapshot", "Backup"}; !reflect.DeepEqual([]string(d.Relations[0].From), want) {
+		t.Errorf("protects from = %v, want %v", d.Relations[0].From, want)
+	}
+	if want := []string{"Volume"}; !reflect.DeepEqual([]string(d.Relations[0].To), want) {
+		t.Errorf("protects to = %v, want %v", d.Relations[0].To, want)
+	}
+	if want := []string{"StoragePool"}; !reflect.DeepEqual([]string(d.Relations[1].From), want) {
+		t.Errorf("backs from = %v, want %v", d.Relations[1].From, want)
+	}
+}
+
+// Every type in a list is checked, not just the first: cortexdb refuses a whole
+// schema whose link side names an unknown type, and registration is
+// best-effort, so a typo in the second entry would cost the ontology silently.
+func TestEveryTypeInAPolymorphicEndIsChecked(t *testing.T) {
+	err := loadTOML(t, `
+entity_types = ["Snapshot", "Volume"]
+
+[[relation]]
+name = "protects"
+from = ["Snapshot", "Backupp"]
+to   = "Volume"
+`)
+	if err == nil || !strings.Contains(err.Error(), "Backupp") {
+		t.Fatalf("expected the typo in the second type to fail the load, got %v", err)
+	}
+}
+
+// An edge's direction is recovered by matching its endpoints against the two
+// ends. Disjoint ends work, and identical ends work — a self-relation reads the
+// same either way. In between an edge matches both readings, and cortexdb
+// refuses such a schema; catching it here makes it cost the load rather than
+// the ontology.
+func TestEndsThatPartiallyOverlapAreRejected(t *testing.T) {
+	err := loadTOML(t, `
+entity_types = ["Snapshot", "Backup", "Volume"]
+
+[[relation]]
+name = "protects"
+from = ["Snapshot", "Backup"]
+to   = ["Backup", "Volume"]
+`)
+	if err == nil || !strings.Contains(err.Error(), "Backup") {
+		t.Fatalf("expected partially overlapping ends to fail the load, got %v", err)
+	}
+}
+
+// A self-relation is the legitimate case of ends that overlap completely.
+func TestIdenticalEndsAreAcceptedAsASelfRelation(t *testing.T) {
+	d := mustLoadTOML(t, `
+entity_types = ["DRBDResource"]
+
+[[relation]]
+name = "conflicts_with"
+from = "DRBDResource"
+to   = "DRBDResource"
+`)
+	if len(d.Relations) != 1 {
+		t.Fatalf("relations = %+v, want the self-relation to load", d.Relations)
+	}
+}
+
+// A list of something other than strings is a mistake worth naming, not a
+// panic and not a silently empty end.
+func TestARelationEndRejectsANonStringList(t *testing.T) {
+	err := loadTOML(t, `
+entity_types = ["Volume"]
+
+[[relation]]
+name = "protects"
+from = [1, 2]
+to   = "Volume"
+`)
+	if err == nil || !strings.Contains(err.Error(), "string") {
+		t.Fatalf("expected a non-string end to fail the load, got %v", err)
+	}
+}

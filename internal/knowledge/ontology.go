@@ -51,12 +51,27 @@ func WithOntology(name string, entityTypes, relationTypes []string) Option {
 	}
 }
 
-// RelationEnd is an edge type whose ends the domain declared. See
-// WithRelationEnds.
+// RelationEnd is an edge type whose ends the domain declared. Each end is one
+// or more entity types. See WithRelationEnds.
 type RelationEnd struct {
 	Name string
-	From string
-	To   string
+	From []string
+	To   []string
+}
+
+// endInterfaceName is what a multi-type end is registered as.
+//
+// cortexdb links are one name and one pair of ends, and a side names one type —
+// but that type may be an interface, which is how a polymorphic end is modelled.
+// So an end listing several types becomes an interface those types implement,
+// named after the relation and the side so it reads in an error message: a
+// schema rejection naming "protects_source" points at the `from` of `protects`.
+//
+// Derived rather than declared because the domain has no reason to name it. It
+// exists to make one relation's end sayable, not to be a concept in the
+// vocabulary.
+func endInterfaceName(relation, side string) string {
+	return strings.ReplaceAll(relation, " ", "_") + "_" + side
 }
 
 // WithRelationEnds tells the ontology what sits on each end of the relations
@@ -76,8 +91,8 @@ func WithRelationEnds(ends []RelationEnd) Option {
 	return func(s *Store) {
 		s.relationEnds = make(map[string]RelationEnd, len(ends))
 		for _, e := range ends {
-			e.Name, e.From, e.To = strings.TrimSpace(e.Name), strings.TrimSpace(e.From), strings.TrimSpace(e.To)
-			if e.Name == "" || e.From == "" || e.To == "" {
+			e.Name, e.From, e.To = strings.TrimSpace(e.Name), trimAll(e.From), trimAll(e.To)
+			if e.Name == "" || len(e.From) == 0 || len(e.To) == 0 {
 				continue
 			}
 			s.relationEnds[strings.ToLower(e.Name)] = e
@@ -265,38 +280,49 @@ func (s *Store) registerOntology(ctx context.Context) error {
 	}
 
 	implements := []string{domainEntityInterface}
-	objects := make([]cortexdb.OntologyObjectType, 0, len(s.entityTypes)+1)
-	objects = append(objects, cortexdb.OntologyObjectType{
-		APIName:     entityInterface,
-		DisplayName: "Entity",
-		Description: "Any extracted graph node. Both ends of every link point here, because the domain declares relation names without ends.",
-		Properties:  props,
-		PrimaryKey:  "id",
-		Implements:  implements,
-	})
-	for _, t := range s.entityTypes {
-		if strings.EqualFold(t, entityInterface) {
-			continue
+	// A link's two sides are the traversal's two directions: cortexdb keeps only
+	// nodes of the FAR side's type, so the side names are what make "backs" and
+	// "backs_of" mean opposite things. Ends the domain declared go in as
+	// themselves; the rest keep the open supertype, which is a traversal that
+	// reaches nothing and an honest statement that the domain said nothing.
+	//
+	// An end listing several types becomes an interface those types implement —
+	// a side names one type, but that type may be an interface, which is how
+	// cortexdb models a polymorphic end. So the object types have to be built
+	// after the links, because building the links is what discovers which
+	// generated interfaces each type belongs to.
+	interfaces := []cortexdb.OntologyInterfaceType{{
+		APIName:     domainEntityInterface,
+		DisplayName: "Domain entity",
+		Description: "Anything the active domain's vocabulary declares. Ask for it by name wherever a node type filter is accepted and it expands to every declared type.",
+	}}
+	// implementedBy maps an entity type to every interface it implements: the
+	// DomainEntity one everything gets, plus a generated one per polymorphic end
+	// it appears in.
+	implementedBy := make(map[string][]string, len(s.entityTypes))
+
+	end := func(relation, side string, types []string) string {
+		if len(types) == 1 {
+			return types[0]
 		}
-		objects = append(objects, cortexdb.OntologyObjectType{
-			APIName:     t,
-			DisplayName: t,
-			Properties:  props,
-			PrimaryKey:  "id",
-			Implements:  implements,
+		name := endInterfaceName(relation, side)
+		interfaces = append(interfaces, cortexdb.OntologyInterfaceType{
+			APIName:     name,
+			DisplayName: name,
+			Description: fmt.Sprintf("The %s end of %q: any of %s.", side, relation, strings.Join(types, ", ")),
 		})
+		for _, t := range types {
+			implementedBy[strings.ToLower(t)] = append(implementedBy[strings.ToLower(t)], name)
+		}
+		return name
 	}
 
-	// A link's two sides are the traversal's two directions: cortexdb keeps only
-	// nodes of the FAR side's object type, so the side names are what make
-	// "backs" and "backs_of" mean opposite things. Ends the domain declared go
-	// in as themselves; the rest keep the open supertype, which is a traversal
-	// that reaches nothing and an honest statement that the domain said nothing.
 	links := make([]cortexdb.OntologyLinkType, 0, len(s.relationTypes))
 	for _, t := range s.relationTypes {
 		from, to := entityInterface, entityInterface
 		if e, ok := s.relationEnds[strings.ToLower(t)]; ok {
-			from, to = e.From, e.To
+			from = end(e.Name, "source", e.From)
+			to = end(e.Name, "target", e.To)
 		}
 		links = append(links, cortexdb.OntologyLinkType{
 			APIName: t,
@@ -310,6 +336,28 @@ func (s *Store) registerOntology(ctx context.Context) error {
 				ObjectTypeAPIName: to,
 				Cardinality:       cortexdb.OntologyCardinalityMany,
 			},
+		})
+	}
+
+	objects := make([]cortexdb.OntologyObjectType, 0, len(s.entityTypes)+1)
+	objects = append(objects, cortexdb.OntologyObjectType{
+		APIName:     entityInterface,
+		DisplayName: "Entity",
+		Description: "Any extracted graph node. Both ends of a link whose ends the domain did not declare point here.",
+		Properties:  props,
+		PrimaryKey:  "id",
+		Implements:  implements,
+	})
+	for _, t := range s.entityTypes {
+		if strings.EqualFold(t, entityInterface) {
+			continue
+		}
+		objects = append(objects, cortexdb.OntologyObjectType{
+			APIName:     t,
+			DisplayName: t,
+			Properties:  props,
+			PrimaryKey:  "id",
+			Implements:  dedupe(append(append([]string{}, implements...), implementedBy[strings.ToLower(t)]...)),
 		})
 	}
 
@@ -353,13 +401,9 @@ func (s *Store) registerOntology(ctx context.Context) error {
 				"entity_type_count":      fmt.Sprint(len(s.entityTypes)),
 				"relation_type_count":    fmt.Sprint(len(s.relationTypes)),
 			},
-			ObjectTypes: objects,
-			LinkTypes:   links,
-			InterfaceTypes: []cortexdb.OntologyInterfaceType{{
-				APIName:     domainEntityInterface,
-				DisplayName: "Domain entity",
-				Description: "Anything the active domain's vocabulary declares. Ask for it by name wherever a node type filter is accepted and it expands to every declared type.",
-			}},
+			ObjectTypes:    objects,
+			LinkTypes:      links,
+			InterfaceTypes: interfaces,
 		},
 	})
 	if err != nil {
@@ -384,7 +428,14 @@ func (s *Store) vocabularyFingerprint() string {
 	// goes on reporting a graph as matching a vocabulary it no longer does.
 	ends := make([]string, 0, len(s.relationEnds))
 	for _, e := range s.relationEnds {
-		ends = append(ends, e.Name+"\x1f"+e.From+"\x1f"+e.To)
+		// The types within one end are sorted for the same reason the
+		// vocabularies are: listing them in a different order is not a
+		// different statement about the domain.
+		from := append([]string(nil), e.From...)
+		to := append([]string(nil), e.To...)
+		sort.Strings(from)
+		sort.Strings(to)
+		ends = append(ends, e.Name+"\x1f"+strings.Join(from, ",")+"\x1f"+strings.Join(to, ","))
 	}
 	sort.Strings(ends)
 
@@ -617,17 +668,20 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 		if !declared {
 			continue
 		}
-		if strings.EqualFold(fromType, e.From) && strings.EqualFold(toType, e.To) {
+		if containsFold(e.From, fromType) && containsFold(e.To, toType) {
 			continue
 		}
 		t := byRelation[e.Name]
 		if t == nil {
-			t = &tally{want: e.From + " → " + e.To, shapes: map[string]int{}}
+			t = &tally{
+				want:   summarizeEnd(e.From) + " → " + summarizeEnd(e.To),
+				shapes: map[string]int{},
+			}
 			byRelation[e.Name] = t
 		}
 		t.count += n
 		t.shapes[fromType+" → "+toType] += n
-		if strings.EqualFold(fromType, e.To) && strings.EqualFold(toType, e.From) {
+		if containsFold(e.To, fromType) && containsFold(e.From, toType) {
 			t.reversed += n
 		}
 	}
@@ -651,6 +705,30 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 		return out[i].Relation < out[j].Relation
 	})
 	return out, nil
+}
+
+// summarizeEnd renders a declared end for a one-line report. A wide end — SDS
+// declares seven source types for `has_state` — would otherwise push the shape
+// that is actually wrong off the end of the line, which is the part a reader
+// came for.
+func summarizeEnd(types []string) string {
+	const show = 3
+	if len(types) <= show {
+		return strings.Join(types, "|")
+	}
+	return strings.Join(types[:show], "|") + fmt.Sprintf("|+%d more", len(types)-show)
+}
+
+// containsFold reports whether a declared end admits this node type, compared
+// case-insensitively for the reason every other comparison over this vocabulary
+// is: the type in the graph is whatever the extracting model emitted.
+func containsFold(types []string, t string) bool {
+	for _, declared := range types {
+		if strings.EqualFold(declared, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // commonest returns the most frequent key, ties broken by name.

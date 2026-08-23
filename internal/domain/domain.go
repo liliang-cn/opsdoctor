@@ -55,13 +55,16 @@ type Domain struct {
 // extracted, expanded and drift-checked, it just cannot be traversed by
 // direction and its ends are not checked.
 //
-// Ends are single types, not lists, because that is what a link type is: one
-// name, one pair of ends. A relation genuinely polymorphic in its source — a
-// `backs` that starts at a StoragePool or at a BlockDevice — should either stay
-// in relation_types, or be split into two names that mean two different things.
-// Generating a name per combination is not an option: the name IS the edge type
-// in the graph, and "backs__StoragePool_DRBDResource" matches no edge anything
-// ever wrote.
+// An end may be one type or several: `from = "StoragePool"` and
+// `from = ["Snapshot", "Backup"]` are both legal. A relation polymorphic in one
+// end — a `protects` that a Snapshot and a Backup both assert — is the common
+// case in an ops vocabulary, and forcing it to a single type would mean either
+// declaring something false or leaving the relation without ends at all.
+//
+// A multi-type end becomes an ontology interface that those types implement,
+// which is how cortexdb models exactly this. What it cannot model is a
+// per-combination link type, because the link's name IS the edge type in the
+// graph: "protects__Snapshot_Volume" matches no edge anything ever wrote.
 //
 // One placement trap, which is TOML's and not this schema's: [[relation]] is a
 // table header, so it ends the top-level section. Written next to
@@ -70,9 +73,38 @@ type Domain struct {
 // reads. Nothing fails. `oss-agent domain` prints the relation-ends count beside
 // the others so the swallowed one shows up as a zero.
 type Relation struct {
-	Name string `toml:"name"`
-	From string `toml:"from"`
-	To   string `toml:"to"`
+	Name string  `toml:"name"`
+	From TypeSet `toml:"from"`
+	To   TypeSet `toml:"to"`
+}
+
+// TypeSet is one or more entity types, written either way round in TOML.
+//
+// The single-string form is not sugar for a one-element list — it is the form
+// almost every relation wants, and requiring `from = ["StoragePool"]` would make
+// the common case pay for the rare one.
+type TypeSet []string
+
+// UnmarshalTOML accepts a string or an array of strings.
+func (t *TypeSet) UnmarshalTOML(v any) error {
+	switch value := v.(type) {
+	case string:
+		*t = TypeSet{value}
+		return nil
+	case []any:
+		out := make(TypeSet, 0, len(value))
+		for _, item := range value {
+			s, ok := item.(string)
+			if !ok {
+				return fmt.Errorf("relation end must be a string or a list of strings, got %T inside the list", item)
+			}
+			out = append(out, s)
+		}
+		*t = out
+		return nil
+	default:
+		return fmt.Errorf("relation end must be a string or a list of strings, got %T", v)
+	}
 }
 
 // Vocabulary partitions the ontology vocabulary by where its edges come from.
@@ -265,23 +297,34 @@ func (d *Domain) compileRelations(path string) error {
 	for _, t := range d.EntityTypes {
 		declared[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
 	}
-	known := func(field, name, t string) error {
-		if strings.TrimSpace(t) == "" {
-			return fmt.Errorf("domain %q: relation %q needs a %s", path, name, field)
+	known := func(field, name string, types TypeSet) (TypeSet, error) {
+		out := make(TypeSet, 0, len(types))
+		seen := make(map[string]struct{}, len(types))
+		for _, t := range types {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+			if _, ok := declared[strings.ToLower(t)]; !ok {
+				return nil, fmt.Errorf("domain %q: relation %q has %s %q, which entity_types does not declare",
+					path, name, field, t)
+			}
+			if _, dup := seen[strings.ToLower(t)]; dup {
+				continue
+			}
+			seen[strings.ToLower(t)] = struct{}{}
+			out = append(out, t)
 		}
-		if _, ok := declared[strings.ToLower(strings.TrimSpace(t))]; !ok {
-			return fmt.Errorf("domain %q: relation %q has %s = %q, which entity_types does not declare",
-				path, name, field, t)
+		if len(out) == 0 {
+			return nil, fmt.Errorf("domain %q: relation %q needs a %s", path, name, field)
 		}
-		return nil
+		return out, nil
 	}
 
 	seen := make(map[string]struct{}, len(d.Relations))
 	for i := range d.Relations {
 		r := &d.Relations[i]
 		r.Name = strings.TrimSpace(r.Name)
-		r.From = strings.TrimSpace(r.From)
-		r.To = strings.TrimSpace(r.To)
 		if r.Name == "" {
 			return fmt.Errorf("domain %q: a [[relation]] has no name", path)
 		}
@@ -293,10 +336,15 @@ func (d *Domain) compileRelations(path string) error {
 			return fmt.Errorf("domain %q: relation %q is declared twice with ends", path, r.Name)
 		}
 		seen[key] = struct{}{}
-		if err := known("from", r.Name, r.From); err != nil {
+
+		var err error
+		if r.From, err = known("from", r.Name, r.From); err != nil {
 			return err
 		}
-		if err := known("to", r.Name, r.To); err != nil {
+		if r.To, err = known("to", r.Name, r.To); err != nil {
+			return err
+		}
+		if err := checkEndOverlap(path, *r); err != nil {
 			return err
 		}
 	}
@@ -311,6 +359,39 @@ func (d *Domain) compileRelations(path string) error {
 		}
 	}
 	return nil
+}
+
+// checkEndOverlap rejects a relation whose two ends share some types but not
+// all of them.
+//
+// A link is bidirectional and an edge is stored in whichever direction it was
+// asserted, so its direction is recovered by matching its endpoint types against
+// the two ends. That works when the ends are disjoint, and when they are the
+// same set — a self-relation like `conflicts_with`, where either orientation is
+// the same statement. In between it does not: with from = ["Snapshot", "Backup"]
+// and to = ["Backup", "Volume"], an edge between two Backups matches both
+// readings.
+//
+// cortexdb refuses such a schema, and registration is best-effort — the refusal
+// would be one log line and then a knowledge base silently running without an
+// ontology at all. Catching it at load makes it cost the load instead.
+func checkEndOverlap(path string, r Relation) error {
+	to := make(map[string]struct{}, len(r.To))
+	for _, t := range r.To {
+		to[strings.ToLower(t)] = struct{}{}
+	}
+	var shared []string
+	for _, t := range r.From {
+		if _, both := to[strings.ToLower(t)]; both {
+			shared = append(shared, t)
+		}
+	}
+	if len(shared) == 0 || (len(shared) == len(r.From) && len(shared) == len(r.To)) {
+		return nil
+	}
+	return fmt.Errorf("domain %q: relation %q has ends that overlap on %s without being the same set, "+
+		"so an edge between two of those has no direction; make the ends disjoint or identical",
+		path, r.Name, strings.Join(shared, ", "))
 }
 
 // indexOfFold finds a case-insensitive match, which is how every other
