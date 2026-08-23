@@ -761,3 +761,69 @@ func TestAWideEndIsTrimmedForTheReportLine(t *testing.T) {
 		t.Errorf("summarizeEnd = %q, want the first three and a count", got)
 	}
 }
+
+// A knowledge base holds two vocabularies with one namespace between them, and
+// they collide: `exports` means "a Node exports a Gateway" in the prose the
+// extractor reads and "a file exports a function" in the code graph the importer
+// writes. Judging the second against the first reported 452 imported edges as
+// misdirected on a live SDS base — real data, correctly imported, filed as a
+// defect, and enough of it to bury the true findings underneath.
+func TestAnImportedCodeEdgeIsNotJudgedAgainstTheProseVocabulary(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Node", "Gateway"}, []string{"exports"}),
+		WithRelationEnds([]RelationEnd{{Name: "exports", From: []string{"Node"}, To: []string{"Gateway"}}}))
+	// Neither end is a declared entity type: this is the code graph's `exports`.
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "server.go", Type: "file"},
+		cortexdb.ToolEntityInput{Name: "Serve", Type: "function"})
+	relate(t, s, "server.go", "Serve", "exports")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 0 {
+		t.Errorf("misdirected = %+v, want none — file and function are not this vocabulary's types", d.MisdirectedEdges)
+	}
+}
+
+// One foot in each world is still not judgeable: no declared end can say where
+// the other foot belongs. Requiring BOTH ends to be declared is what makes that
+// true rather than half-true.
+func TestAnEdgeWithOneFootOutsideTheVocabularyIsNotJudged(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Node", "Gateway"}, []string{"exports"}),
+		WithRelationEnds([]RelationEnd{{Name: "exports", From: []string{"Node"}, To: []string{"Gateway"}}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "node-a", Type: "Node"},
+		cortexdb.ToolEntityInput{Name: "Serve", Type: "function"})
+	relate(t, s, "node-a", "Serve", "exports")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 0 {
+		t.Errorf("misdirected = %+v, want none", d.MisdirectedEdges)
+	}
+}
+
+// And the filter must not swallow the real thing: both ends declared, neither
+// matching the relation's ends, is exactly what the check is for.
+func TestAnEdgeBetweenTwoDeclaredTypesIsStillJudged(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Node", "Gateway", "Package"}, []string{"exports"}),
+		WithRelationEnds([]RelationEnd{{Name: "exports", From: []string{"Node"}, To: []string{"Gateway"}}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "drbd-utils", Type: "Package"},
+		cortexdb.ToolEntityInput{Name: "nfs-gw", Type: "Gateway"})
+	relate(t, s, "drbd-utils", "nfs-gw", "exports")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 1 {
+		t.Fatalf("misdirected = %+v, want the Package->Gateway edge", d.MisdirectedEdges)
+	}
+}

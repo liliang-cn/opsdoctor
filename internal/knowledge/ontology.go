@@ -668,6 +668,23 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 		if !declared {
 			continue
 		}
+		// An edge with a foot outside the prose vocabulary is not this
+		// vocabulary's edge, whatever it is spelled.
+		//
+		// A knowledge base holds two vocabularies with one namespace between
+		// them, and they collide: `exports` means "a Node exports a Gateway" in
+		// the prose the extractor reads and "a file exports a function" in the
+		// code graph the importer writes. Judging the second against the first
+		// reported 452 imported edges as misdirected on a live SDS base — real
+		// data, correctly imported, filed as a defect, and enough of it to bury
+		// the eleven findings underneath that were true.
+		//
+		// Both ends must be declared, not either: a `Node → function` edge has
+		// one foot in each world, and no declared end can say anything about
+		// where the other foot belongs.
+		if !s.declaresNodeType(fromType) || !s.declaresNodeType(toType) {
+			continue
+		}
 		if containsFold(e.From, fromType) && containsFold(e.To, toType) {
 			continue
 		}
