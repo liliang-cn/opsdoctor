@@ -22,6 +22,7 @@ import (
 
 	"github.com/liliang-cn/cortexdb/v2/pkg/core"
 	"github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
+	"github.com/liliang-cn/cortexdb/v2/pkg/graph"
 
 	"github.com/liliang-cn/oss-agent/internal/extract"
 )
@@ -463,48 +464,74 @@ func (s *Store) SearchGraph(ctx context.Context, query string, topK int) (*Graph
 		}
 	}
 
-	// No single entity type may take the whole budget. The neighbours come back
-	// in the graph's own order, so a type the corpus is dense in — a doc listing
-	// six service IPs puts six VIPs one hop from anything gateway-shaped — filled
-	// half the twelve slots with addresses while the packages and services the
-	// question was actually about queued behind them. Capping per type costs
-	// nothing when the neighbourhood is varied and is the whole difference when
-	// it is not.
+	res.Neighbors = s.pickNeighbors(exp.Nodes, seedSet, via)
+	return res, nil
+}
+
+// pickNeighbors turns an expansion's nodes into the bounded, ordered neighbour
+// list an answer is allowed to carry.
+//
+// No single entity type may take the whole budget. The neighbours come back in
+// the graph's own order, so a type the corpus is dense in — a doc listing six
+// service IPs puts six VIPs one hop from anything gateway-shaped — filled half
+// the twelve slots with addresses while the packages and services the question
+// was actually about queued behind them. Capping per type costs nothing when the
+// neighbourhood is varied and is the whole difference when it is not.
+//
+// Two passes, declared types first. A neighbour whose type the domain never
+// declared was invented by the extracting model or imported from a code graph;
+// either way it is not a concept domain.toml says this product is made of, and
+// it should not take a slot from one that is while twelve slots are handed out
+// in whatever order the graph happened to return. The second pass keeps them
+// reachable — a `function` one hop from an ErrorCode is often exactly the
+// answer — just behind.
+func (s *Store) pickNeighbors(nodes []*graph.GraphNode, seedSet map[string]struct{}, via map[string]string) []Neighbor {
+	var out []Neighbor
 	seen := make(map[string]struct{})
 	perType := make(map[string]int)
-	for _, n := range exp.Nodes {
-		if n == nil || n.ID == "" {
-			continue
-		}
-		if _, isSeed := seedSet[n.ID]; isSeed {
-			continue
-		}
-		if _, dup := seen[n.ID]; dup {
-			continue
-		}
-		if perType[n.NodeType] >= maxNeighborsPerType {
-			continue
-		}
-		seen[n.ID] = struct{}{}
-		perType[n.NodeType]++
-		nb := Neighbor{ID: n.ID, Type: n.NodeType, Via: via[n.ID], Name: n.Content}
-		if p := n.Properties; p != nil {
-			if v, ok := p["name"].(string); ok && v != "" {
-				nb.Name = v
+
+	take := func(declared bool) {
+		for _, n := range nodes {
+			if n == nil || n.ID == "" {
+				continue
 			}
-			if v, ok := p["description"].(string); ok {
-				nb.Summary = v
+			if s.declaresNodeType(n.NodeType) != declared {
+				continue
 			}
-			if v, ok := p["file_path"].(string); ok {
-				nb.FilePath = v
+			if _, isSeed := seedSet[n.ID]; isSeed {
+				continue
 			}
-		}
-		res.Neighbors = append(res.Neighbors, nb)
-		if len(res.Neighbors) >= graphNeighborsTotal {
-			break
+			if _, dup := seen[n.ID]; dup {
+				continue
+			}
+			if perType[n.NodeType] >= maxNeighborsPerType {
+				continue
+			}
+			seen[n.ID] = struct{}{}
+			perType[n.NodeType]++
+			nb := Neighbor{ID: n.ID, Type: n.NodeType, Via: via[n.ID], Name: n.Content}
+			if p := n.Properties; p != nil {
+				if v, ok := p["name"].(string); ok && v != "" {
+					nb.Name = v
+				}
+				if v, ok := p["description"].(string); ok {
+					nb.Summary = v
+				}
+				if v, ok := p["file_path"].(string); ok {
+					nb.FilePath = v
+				}
+			}
+			out = append(out, nb)
+			if len(out) >= graphNeighborsTotal {
+				return
+			}
 		}
 	}
-	return res, nil
+	take(true)
+	if len(out) < graphNeighborsTotal {
+		take(false)
+	}
+	return out
 }
 
 // PurgeSource removes every embedding belonging to a source, plus everything
@@ -612,6 +639,10 @@ type GraphView struct {
 }
 
 const graphViewMaxNodes = 60
+
+// graphViewSeeds caps how many nodes a name lookup contributes to an explorer
+// query, matching the LIMIT the SQL it replaced carried.
+const graphViewSeeds = 20
 
 // graphExploreEdgeTypes widens expansion for the explorer to include the
 // uppercase DOMAIN relations (from LLM ontology extraction) alongside the code
@@ -802,21 +833,11 @@ func (s *Store) QueryGraph(ctx context.Context, query string, topK int) (*GraphV
 		}
 	}
 	// Also seed by graph-node name: domain-concept entities (from LLM ontology
-	// extraction) have no embeddings, so vector search misses them — match by label.
-	if rows, e := s.db.SQL().QueryContext(ctx,
-		`SELECT id FROM graph_nodes WHERE lower(content) LIKE ?
-		 ORDER BY CASE WHEN node_type IN
-		   ('Table','Resource','ResourceGroup','Volume','StoragePool','Node','Cluster','ErrorCode','State','CLI_Command','ConfigParameter','KernelModule')
-		   THEN 0 ELSE 1 END
-		 LIMIT 20`,
-		"%"+strings.ToLower(query)+"%"); e == nil {
-		for rows.Next() {
-			var id string
-			if rows.Scan(&id) == nil {
-				seedSet[id] = struct{}{}
-			}
-		}
-		rows.Close()
+	// extraction) have no embeddings, so vector search misses them — match by
+	// label instead, the domain's own declared types first. See seedsByName; the
+	// preference used to be a literal list of one product's type names.
+	for _, id := range s.seedsByName(ctx, query, graphViewSeeds) {
+		seedSet[id] = struct{}{}
 	}
 	if len(seedSet) == 0 {
 		return &GraphView{}, nil
@@ -1041,6 +1062,12 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 			if _, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: ents}); err != nil {
 				upsertFailures.Add(1)
 				logOnce(&upsertLogged, "[ossagent] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
+			} else {
+				// The graph now holds entities extracted under the vocabulary
+				// currently loaded — which is the only place that fact can be
+				// recorded, and what makes "this graph was built under a
+				// different domain.toml" answerable later. See DriftReport.
+				s.noteExtractionVocabulary(ctx)
 			}
 		}
 		var rels []cortexdb.ToolRelationInput

@@ -36,6 +36,28 @@ func LLM(cfg config.Config) (agdomain.Generator, error) {
 	})
 }
 
+// StoreOptions is what a domain's vocabulary means to a knowledge store, in one
+// place, for every caller that opens one.
+//
+// It was previously written out at each call site, and most call sites did not
+// write it: eleven of thirteen CLI commands opened the store with no vocabulary
+// at all, so `doctor` measured drift against nothing and reported a
+// twenty-seven-type domain as declaring none. Nothing failed — the vocabulary
+// was simply absent, per command, and which commands had it was something you
+// learned by reading each one.
+//
+// The relation half is what retrieval-time graph expansion traverses: the edges
+// in the graph are the ones extraction was told to produce, so the whitelist has
+// to come from the same declaration. The entity half is registered as a cortexdb
+// ontology schema, which records the vocabulary the graph was extracted under,
+// gives drift a baseline, and is what seeding asks for by interface.
+func StoreOptions(dom *domain.Domain) []knowledge.Option {
+	return []knowledge.Option{
+		knowledge.WithRelationTypes(dom.RelationTypes),
+		knowledge.WithOntology(dom.Name, dom.EntityTypes, dom.RelationTypes),
+	}
+}
+
 // BuildExtractor returns an LLM ontology extractor for the domain, or nil if no
 // LLM key is configured (ingestion then stores vectors without graph extraction).
 func BuildExtractor(cfg config.Config, dom *domain.Domain) *extract.Extractor {
@@ -73,16 +95,8 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 		return nil, nil, fmt.Errorf("init embedder: %w", err)
 	}
 
-	// The domain's relation vocabulary is what retrieval-time graph expansion
-	// traverses: the edges in the graph are the ones extraction was told to
-	// produce, so the whitelist has to come from the same declaration.
-	//
-	// The same declaration is registered as a cortexdb ontology schema, so the
-	// graph carries a record of the vocabulary it was extracted under and drift
-	// away from it is measurable rather than something you infer from answers.
 	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim,
-		knowledge.WithRelationTypes(dom.RelationTypes),
-		knowledge.WithOntology(dom.Name, dom.EntityTypes, dom.RelationTypes))
+		StoreOptions(dom)...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open knowledge: %w", err)
 	}

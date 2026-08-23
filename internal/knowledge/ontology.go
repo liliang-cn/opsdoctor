@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
@@ -77,6 +78,109 @@ func trimAll(in []string) []string {
 // name object types.
 const entityInterface = "Entity"
 
+// domainEntityInterface is what every declared entity type implements, and it is
+// the vocabulary's one retrieval-time consequence.
+//
+// Registering object types recorded the vocabulary but could not be *asked*
+// anything: "which of these nodes are things the domain declared" had no answer
+// short of an IN list assembled by hand, and the one place that wanted it — the
+// graph explorer's seed query — carried a literal list of twelve LINSTOR type
+// names, so a second product's own entities sorted below the first product's.
+//
+// An interface is the form cortexdb can answer that question in. It expands to
+// its implementors wherever a type filter is accepted (FindNodes, search,
+// expand), so asking for DomainEntity asks for the active domain's vocabulary,
+// whatever that domain happens to be. Nothing is stored under this name; it is a
+// question, not a type.
+//
+// The Entity anchor implements it too, because a chunk whose extraction omitted
+// a type is stored as `entity` — still something the domain's extractor pulled
+// out of prose, and still not an imported code node, which is the distinction
+// this interface exists to draw.
+const domainEntityInterface = "DomainEntity"
+
+// Two fingerprints are stored on the schema, and the difference between them is
+// the whole point.
+//
+// vocabularyFingerprintKey is what domain.toml declared the last time the store
+// was opened. extractionFingerprintKey is what it declared when entities were
+// last written INTO the graph, and it is only ever set by an ingest.
+//
+// Comparing the first against the live domain.toml can never fail: registration
+// runs at Open, so by the time anything reads it back it has already been
+// overwritten with the value it is about to be compared to. The check read as a
+// real one and could not fire. The graph, meanwhile, still holds edges spelled
+// the old way, expansion still filters them all out, and the symptom is still an
+// answer that is merely thinner than it should be.
+const (
+	vocabularyFingerprintKey = "vocabulary_fingerprint"
+	extractionFingerprintKey = "extraction_fingerprint"
+)
+
+// extractionFingerprintOf reads the extraction record off a stored schema, or
+// "" when there is none — an empty record means nothing has been extracted yet,
+// which is not drift.
+func extractionFingerprintOf(stored *cortexdb.OntologySchema) string {
+	if stored == nil {
+		return ""
+	}
+	return stored.Metadata[extractionFingerprintKey]
+}
+
+// storedOntology returns the schema already in the database, or nil.
+func (s *Store) storedOntology(ctx context.Context) *cortexdb.OntologySchema {
+	got, err := s.db.GetOntologySchema(ctx, cortexdb.OntologyGetRequest{SchemaID: ontologySchemaID})
+	if err != nil || got == nil {
+		return nil
+	}
+	return &got.Schema
+}
+
+// ontologyIsCurrent reports whether the stored schema already IS this
+// vocabulary, active and non-gating.
+//
+// cortexdb derives a schema's version on every save — a stored one always
+// becomes version+1 — and every command that opens the store registers. Without
+// this the version counter measured how many times someone ran `search`, and a
+// read-only command wrote to the database to learn nothing.
+func (s *Store) ontologyIsCurrent(stored *cortexdb.OntologySchema) bool {
+	return stored != nil &&
+		stored.Active &&
+		stored.Enforcement == cortexdb.OntologyEnforcementVocabulary &&
+		stored.Metadata[vocabularyFingerprintKey] == s.vocabularyFingerprint()
+}
+
+// noteExtractionVocabulary records that entities have just been written under
+// the vocabulary now loaded. Called after a successful entity upsert, and a
+// no-op when the record already says so — which is every ingest but the first
+// after a domain.toml change.
+//
+// Best-effort, like everything else about the registration: an ingest that
+// cannot update the record has still grown the graph, and refusing to ingest
+// over bookkeeping would trade the capability for the record of it.
+func (s *Store) noteExtractionVocabulary(ctx context.Context) {
+	if len(s.entityTypes) == 0 && len(s.relationTypes) == 0 {
+		return
+	}
+	stored := s.storedOntology(ctx)
+	if stored == nil {
+		return
+	}
+	current := s.vocabularyFingerprint()
+	if stored.Metadata[extractionFingerprintKey] == current {
+		return
+	}
+	if stored.Metadata == nil {
+		stored.Metadata = map[string]string{}
+	}
+	stored.Metadata[extractionFingerprintKey] = current
+	if _, err := s.db.SaveOntologySchema(ctx, cortexdb.OntologySaveRequest{
+		Activate: true, Schema: *stored,
+	}); err != nil {
+		log.Printf("[ossagent] knowledge: recording the extraction vocabulary failed: %v", err)
+	}
+}
+
 // registerOntology stores the declared vocabulary and activates it in
 // vocabulary mode — canonical spellings and interface retrieval, no write
 // gating.
@@ -84,12 +188,24 @@ func (s *Store) registerOntology(ctx context.Context) error {
 	if len(s.entityTypes) == 0 && len(s.relationTypes) == 0 {
 		return nil
 	}
+	stored := s.storedOntology(ctx)
+	if s.ontologyIsCurrent(stored) {
+		return nil
+	}
 
-	// Every object type carries the two properties a graph node actually has:
-	// its store id and the text it was extracted from. cortexdb validates that
-	// primary_key names a DECLARED property, so an object type that names "id"
-	// without declaring it is rejected and the whole schema fails to register —
-	// silently, since registration is best-effort.
+	// Every object type carries the properties a graph node actually has.
+	//
+	// "id" is here because cortexdb validates that primary_key names a DECLARED
+	// property, so an object type naming "id" without declaring it is rejected
+	// and the whole schema fails to register — silently, since registration is
+	// best-effort.
+	//
+	// The other two are `name` and `description` because those are the keys
+	// cortexdb writes into a node's properties JSON when an extracted entity is
+	// upserted, and a property predicate reads properties, not columns. A
+	// "content" property was declared here for a while and matched nothing: the
+	// text is in the graph_nodes.content COLUMN, which no predicate can see, so
+	// every filter over it silently selected the empty set.
 	props := []cortexdb.OntologyProperty{
 		{
 			APIName:     "id",
@@ -99,14 +215,22 @@ func (s *Store) registerOntology(ctx context.Context) error {
 			Required:    true,
 		},
 		{
-			APIName:     "content",
-			DisplayName: "Content",
-			Description: "The text the node was extracted from.",
+			APIName:     "name",
+			DisplayName: "Name",
+			Description: "What the entity is called in the text it was extracted from.",
+			DataType:    cortexdb.OntologyDataType{Kind: cortexdb.OntologyDataString},
+			Searchable:  true,
+		},
+		{
+			APIName:     "description",
+			DisplayName: "Description",
+			Description: "The one-line description the extractor produced for the entity.",
 			DataType:    cortexdb.OntologyDataType{Kind: cortexdb.OntologyDataString},
 			Searchable:  true,
 		},
 	}
 
+	implements := []string{domainEntityInterface}
 	objects := make([]cortexdb.OntologyObjectType, 0, len(s.entityTypes)+1)
 	objects = append(objects, cortexdb.OntologyObjectType{
 		APIName:     entityInterface,
@@ -114,6 +238,7 @@ func (s *Store) registerOntology(ctx context.Context) error {
 		Description: "Any extracted graph node. Both ends of every link point here, because the domain declares relation names without ends.",
 		Properties:  props,
 		PrimaryKey:  "id",
+		Implements:  implements,
 	})
 	for _, t := range s.entityTypes {
 		if strings.EqualFold(t, entityInterface) {
@@ -124,6 +249,7 @@ func (s *Store) registerOntology(ctx context.Context) error {
 			DisplayName: t,
 			Properties:  props,
 			PrimaryKey:  "id",
+			Implements:  implements,
 		})
 	}
 
@@ -175,12 +301,22 @@ func (s *Store) registerOntology(ctx context.Context) error {
 				// vocabulary: compare it against the stored schema and a
 				// domain.toml that changed since the last ingest is visible
 				// instead of being something you deduce from bad answers.
-				"vocabulary_fingerprint": s.vocabularyFingerprint(),
+				vocabularyFingerprintKey: s.vocabularyFingerprint(),
+				// Carried across, never set here. This registration is a
+				// statement about domain.toml; only an ingest can say what the
+				// GRAPH was built under, and overwriting it here is what made
+				// the comparison compare a value with itself.
+				extractionFingerprintKey: extractionFingerprintOf(stored),
 				"entity_type_count":      fmt.Sprint(len(s.entityTypes)),
 				"relation_type_count":    fmt.Sprint(len(s.relationTypes)),
 			},
 			ObjectTypes: objects,
 			LinkTypes:   links,
+			InterfaceTypes: []cortexdb.OntologyInterfaceType{{
+				APIName:     domainEntityInterface,
+				DisplayName: "Domain entity",
+				Description: "Anything the active domain's vocabulary declares. Ask for it by name wherever a node type filter is accepted and it expands to every declared type.",
+			}},
 		},
 	})
 	if err != nil {
@@ -201,17 +337,101 @@ func (s *Store) vocabularyFingerprint() string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// declaresNodeType reports whether the domain's vocabulary contains this node
+// type, comparing case-insensitively for the reason diffVocabulary does: the
+// type in the graph is whatever the extracting model emitted, and "Contains" is
+// the declared "contains" with a capital letter.
+//
+// A domain that declared no vocabulary declares everything: with nothing to
+// prefer, preferring nothing is what keeps such a domain behaving as before.
+func (s *Store) declaresNodeType(t string) bool {
+	if len(s.entityTypes) == 0 {
+		return true
+	}
+	for _, declared := range s.entityTypes {
+		if strings.EqualFold(declared, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// seedsByName resolves a query to graph node ids by what the nodes are called,
+// asking for the domain's own vocabulary first and only then for anything else.
+//
+// This is the ontology's one retrieval-time consequence, and it replaced a
+// literal list of twelve LINSTOR type names in an ORDER BY — a per-project
+// constant that sorted a second product's entities below the first product's,
+// and that could not be told a domain had changed. Asking for
+// domainEntityInterface asks cortexdb to expand the ACTIVE schema, so the
+// preference follows domain.toml with nothing transcribed.
+//
+// Two passes rather than one filtered query: an explorer that could only reach
+// declared entities could not show the imported code graph at all, which is
+// half of what there is to explore. Declared first, the rest behind it.
+//
+// Best-effort throughout. A seed set is an optimization over "expand from
+// nothing", so a lookup that fails returns what it has.
+func (s *Store) seedsByName(ctx context.Context, query string, limit int) []string {
+	if strings.TrimSpace(query) == "" || limit <= 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, limit)
+	out := make([]string, 0, limit)
+
+	collect := func(nodeTypes []string) {
+		if len(out) >= limit {
+			return
+		}
+		res, err := s.tb.FindNodes(ctx, cortexdb.ToolFindNodesRequest{
+			Names:     []string{query},
+			NodeTypes: nodeTypes,
+			Limit:     limit,
+		})
+		if err != nil {
+			log.Printf("[ossagent] knowledge: name seeding failed: %v", err)
+			return
+		}
+		for _, m := range res.Matches {
+			for _, n := range m.Nodes {
+				if n == nil || n.ID == "" {
+					continue
+				}
+				if _, dup := seen[n.ID]; dup {
+					continue
+				}
+				seen[n.ID] = struct{}{}
+				out = append(out, n.ID)
+				if len(out) >= limit {
+					return
+				}
+			}
+		}
+	}
+
+	// A domain that declared no vocabulary registers no schema, so the
+	// interface resolves to nothing and the filtered pass would only cost a
+	// scan. Skipping it also keeps such a domain behaving exactly as before.
+	if len(s.entityTypes) > 0 {
+		collect([]string{domainEntityInterface})
+	}
+	collect(nil)
+	return out
+}
+
 // OntologyDrift is what the graph holds that the domain never declared, and
 // what it declared that never appeared.
 type OntologyDrift struct {
 	// Registered is false when no vocabulary was declared, in which case the
 	// other fields say nothing.
 	Registered bool `json:"registered"`
-	// Fingerprint identifies the vocabulary this was measured against.
+	// Fingerprint identifies the vocabulary now loaded from domain.toml.
 	Fingerprint string `json:"fingerprint,omitempty"`
-	// StoredFingerprint is what the schema in the database was registered with.
-	// A difference means the graph was extracted under a different vocabulary
-	// than the one now loaded, and stale edges may be unreachable.
+	// StoredFingerprint is the vocabulary the GRAPH was extracted under — the
+	// one in force when entities were last written. A difference means the graph
+	// holds edges spelled the old way, expansion filters every one of them out,
+	// and GraphRAG has quietly become plain vector search. Empty until something
+	// has been ingested, which is not drift.
 	StoredFingerprint string `json:"stored_fingerprint,omitempty"`
 
 	// UndeclaredNodeTypes and UndeclaredEdgeTypes were invented by the
@@ -246,9 +466,7 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 	d.Registered = true
 	d.Fingerprint = s.vocabularyFingerprint()
 
-	if got, err := s.db.GetOntologySchema(ctx, cortexdb.OntologyGetRequest{SchemaID: ontologySchemaID}); err == nil && got != nil {
-		d.StoredFingerprint = got.Schema.Metadata["vocabulary_fingerprint"]
-	}
+	d.StoredFingerprint = extractionFingerprintOf(s.storedOntology(ctx))
 
 	nodeCounts, err := s.typeCounts(ctx, "SELECT node_type, COUNT(*) FROM graph_nodes GROUP BY node_type")
 	if err != nil {

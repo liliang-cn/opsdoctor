@@ -53,6 +53,13 @@ type (
 	Inventory = knowledge.Inventory
 	// SourceInfo is one ingested document's footprint.
 	SourceInfo = knowledge.SourceInfo
+	// OntologyDrift is where the extracted graph left the vocabulary
+	// domain.toml declares. Carried on Inventory.
+	OntologyDrift = knowledge.OntologyDrift
+	// Diagnosis is the retrieval-path health report. See Agent.Doctor.
+	Diagnosis = knowledge.Diagnosis
+	// Check is one diagnostic result within a Diagnosis.
+	Check = knowledge.Check
 	// Verdict is the red-line wall's ruling on a command.
 	Verdict = safety.Verdict
 	// LogReport is the result of triaging a log file/dir/archive.
@@ -112,6 +119,9 @@ type Agent struct {
 	extract *extract.Extractor // ontology extractor for ingest (nil ⇒ vectors only)
 	mcp     []*mcp.Client
 	mcpStat []MCPStatus
+	// embBaseURL is kept for Doctor, whose first check is whether a proxy sits
+	// in front of this endpoint.
+	embBaseURL string
 }
 
 // LoadDomain reads a domain.toml from disk.
@@ -170,7 +180,8 @@ func New(cfg Config) (*Agent, error) {
 		return nil, fmt.Errorf("compile red-lines: %w", err)
 	}
 
-	a := &Agent{svc: svc, store: store, dom: dom, filter: filter, extract: agents.BuildExtractor(c, dom)}
+	a := &Agent{svc: svc, store: store, dom: dom, filter: filter, extract: agents.BuildExtractor(c, dom),
+		embBaseURL: c.EmbBaseURL}
 
 	// Mount any external MCP servers. This never fails New: unreachable servers are
 	// recorded in mcpStat and skipped, leaving a knowledge-only agent.
@@ -331,6 +342,21 @@ func (a *Agent) Refresh(ctx context.Context, dir string) (IngestStats, error) {
 // point the agent at a new embedder and every search quietly returns nothing.
 func (a *Agent) Inventory(ctx context.Context) (*Inventory, error) {
 	return a.store.Inventory(ctx)
+}
+
+// Doctor reports on the retrieval path: whether the embedder is reachable and
+// unproxied, whether the index caps recall, how the corpus splits between code
+// and prose, how much of the graph is unreachable, and how far the extracted
+// graph has drifted from the vocabulary domain.toml declares.
+//
+// Inventory answers "what is in the store"; this answers "does retrieval still
+// work", which is the question that goes wrong silently. Every check exists
+// because the corresponding failure produced no error anywhere — the copilot
+// simply answered worse, and nothing said why. A caller embedding this library
+// has no CLI to run `oss-agent doctor` with, which is the whole reason it is
+// here.
+func (a *Agent) Doctor(ctx context.Context) *Diagnosis {
+	return a.store.Doctor(ctx, a.embBaseURL)
 }
 
 // PurgeSource removes a source's chunks (and derived graph nodes/edges). match is a

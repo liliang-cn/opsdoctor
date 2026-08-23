@@ -2,7 +2,6 @@ package knowledge
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 )
 
@@ -19,10 +18,10 @@ import (
 func TestSeedsComeFromEntityLabelsInTheRetrievedText(t *testing.T) {
 	s := openTempStore(t)
 
-	mustExec(t, s, `INSERT INTO graph_nodes (id, content, node_type) VALUES
-		('entity:drbd_reactor', 'drbd-reactor', 'SystemdService'),
-		('entity:nfs_kernel_server', 'nfs-kernel-server', 'Package'),
-		('entity:unrelated', 'polymarket', 'Package')`)
+	mustExec(t, s, `INSERT INTO graph_nodes (id, vector, content, node_type) VALUES
+		('entity:drbd_reactor', X'', 'drbd-reactor', 'SystemdService'),
+		('entity:nfs_kernel_server', X'', 'nfs-kernel-server', 'Package'),
+		('entity:unrelated', X'', 'polymarket', 'Package')`)
 
 	hits := []Hit{{Content: "The NFS gateway needs nfs-kernel-server installed before drbd-reactor can start it."}}
 	got := s.seedsFromHitText(context.Background(), hits, map[string]struct{}{})
@@ -39,9 +38,9 @@ func TestSeedsComeFromEntityLabelsInTheRetrievedText(t *testing.T) {
 // spends the cap without bringing back anything a reader asked for.
 func TestSeedsSkipLabelsThatAreJustAddresses(t *testing.T) {
 	s := openTempStore(t)
-	mustExec(t, s, `INSERT INTO graph_nodes (id, content, node_type) VALUES
-		('entity:vip', '192.168.123.200/24', 'VIP'),
-		('entity:gw', 'iscsi-gw', 'Gateway')`)
+	mustExec(t, s, `INSERT INTO graph_nodes (id, vector, content, node_type) VALUES
+		('entity:vip', X'', '192.168.123.200/24', 'VIP'),
+		('entity:gw', X'', 'iscsi-gw', 'Gateway')`)
 
 	hits := []Hit{{Content: "iscsi-gw exports on 192.168.123.200/24"}}
 	got := s.seedsFromHitText(context.Background(), hits, map[string]struct{}{})
@@ -58,8 +57,8 @@ func TestSeedsSkipLabelsThatAreJustAddresses(t *testing.T) {
 // spends it twice on the same neighbourhood.
 func TestSeedsSkipWhatIsAlreadySeeded(t *testing.T) {
 	s := openTempStore(t)
-	mustExec(t, s, `INSERT INTO graph_nodes (id, content, node_type) VALUES
-		('entity:drbd_reactor', 'drbd-reactor', 'SystemdService')`)
+	mustExec(t, s, `INSERT INTO graph_nodes (id, vector, content, node_type) VALUES
+		('entity:drbd_reactor', X'', 'drbd-reactor', 'SystemdService')`)
 
 	seen := map[string]struct{}{"entity:drbd_reactor": {}}
 	got := s.seedsFromHitText(context.Background(), []Hit{{Content: "drbd-reactor"}}, seen)
@@ -81,19 +80,14 @@ func TestLetterCount(t *testing.T) {
 	}
 }
 
+// openTempStore is openStore with no declared vocabulary: seeding by label is
+// pure SQL over the graph tables and never consults the ontology.
+//
+// cortexdb creates the graph tables at open, so the rows these tests insert go
+// into the real schema — which is why they must carry a (here empty) vector blob.
 func openTempStore(t *testing.T) *Store {
 	t.Helper()
-	// The embedder is never called: seeding is pure SQL over the graph tables.
-	s, err := Open(filepath.Join(t.TempDir(), "k.db"), "http://127.0.0.1:1/v1", "x", "none", 8)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	// cortexdb creates the graph tables lazily, on first graph use. Seeding is
-	// pure SQL over them, so the test makes the minimal shape it reads.
-	mustExec(t, s, `CREATE TABLE IF NOT EXISTS graph_nodes (
-		id TEXT PRIMARY KEY, content TEXT, node_type TEXT)`)
-	return s
+	return openStore(t)
 }
 
 func mustExec(t *testing.T, s *Store, q string) {

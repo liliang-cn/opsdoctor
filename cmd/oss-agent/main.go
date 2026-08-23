@@ -126,7 +126,7 @@ func runIngest(dir string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -171,7 +171,7 @@ func runExport(args []string) {
 		prefix = args[1]
 	}
 	cfg := config.Load()
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -196,7 +196,7 @@ func runExport(args []string) {
 // keeps answering through all of them, which is why they need asking about.
 func runDoctor() {
 	cfg := config.Load()
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -243,7 +243,7 @@ func runIngestCLI(args []string) {
 	name := filepath.Base(bin)
 	docID := name + "-help"
 
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -292,7 +292,7 @@ func runIngestRepo(arg string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -385,7 +385,7 @@ func runRefresh(arg string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -467,8 +467,7 @@ func runServe(openUI bool) {
 	} else {
 		fmt.Fprintln(os.Stderr, "warning: OSS_LLM_API_KEY not set — serving search-only (no /ask, /diagnose)")
 		store, err = knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim,
-			knowledge.WithRelationTypes(dom.RelationTypes),
-			knowledge.WithOntology(dom.Name, dom.EntityTypes, dom.RelationTypes))
+			agents.StoreOptions(dom)...)
 		if err != nil {
 			fail("open knowledge: %v", err)
 		}
@@ -645,7 +644,7 @@ func runImportGraph(path string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -667,7 +666,7 @@ func runImportSchema(path string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -689,7 +688,7 @@ func runImportModel(path string) {
 	if cfg.EmbAPIKey == "" {
 		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
 	}
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -716,7 +715,7 @@ func runSalvage(arg string) {
 		fail("salvage: %v", err)
 	}
 	fmt.Printf("salvaged %d nodes, %d edges, %d layers from %s → %s\n", ss.Nodes, ss.Edges, ss.Layers, strings.Join(ss.Sources, ", "), merged)
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -778,7 +777,7 @@ func runSearch(query string) {
 		fail("usage: oss-agent search <query>")
 	}
 	cfg := config.Load()
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim)
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -807,8 +806,7 @@ func runSearchGraph(query string) {
 		fail("usage: oss-agent search-graph <query>")
 	}
 	cfg := config.Load()
-	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim,
-		knowledge.WithRelationTypes(optionalRelationTypes(cfg)))
+	store, err := openKnowledge(cfg)
 	if err != nil {
 		fail("open knowledge: %v", err)
 	}
@@ -911,16 +909,20 @@ func loadDomain(cfg config.Config) *domain.Domain {
 	return d
 }
 
-// optionalRelationTypes reads the domain's edge vocabulary for the commands that
-// query an already-built index. Those have never needed a domain.toml to run —
-// inspecting an index you were handed is a legitimate thing to do — so a missing
-// or broken one costs the graph filter its vocabulary, not the command its life.
-func optionalRelationTypes(cfg config.Config) []string {
-	d, err := domain.Load(cfg.DomainFile)
-	if err != nil {
-		return nil
+// openKnowledge opens the knowledge store with the active domain's vocabulary
+// attached, for every command that touches one.
+//
+// The domain is optional here, unlike in `ask` or `serve`: these commands query
+// or extend an already-built index, and inspecting an index you were handed is a
+// legitimate thing to do. A missing or broken domain.toml costs the store its
+// vocabulary, not the command its life. See agents.StoreOptions for what the
+// vocabulary buys.
+func openKnowledge(cfg config.Config) (*knowledge.Store, error) {
+	var opts []knowledge.Option
+	if d, err := domain.Load(cfg.DomainFile); err == nil {
+		opts = agents.StoreOptions(d)
 	}
-	return d.RelationTypes
+	return knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim, opts...)
 }
 
 func fail(format string, a ...interface{}) {

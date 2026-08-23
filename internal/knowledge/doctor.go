@@ -71,7 +71,87 @@ func (s *Store) Doctor(ctx context.Context, embBaseURL string) *Diagnosis {
 	d.add(s.checkRecallDepth(ctx))
 	d.add(s.checkSourceBalance(ctx, inv, invErr))
 	d.add(s.checkOrphanNodes(ctx))
+	d.add(checkVocabularyDrift(inv, invErr))
 	return d
+}
+
+// checkVocabularyDrift reports where the graph left the vocabulary the domain
+// declared.
+//
+// DriftReport has computed this since the ontology was first registered, and
+// Inventory has carried it — but nothing printed it, so the answer existed and
+// no operator could reach it without writing Go. That is the same shape as the
+// failure it was written to catch: a live SDS base carrying a "StorageClass"
+// node type nobody declared, invisible until someone ran a GROUP BY by hand.
+func checkVocabularyDrift(inv *Inventory, invErr error) Check {
+	const name = "vocabulary drift"
+	if invErr != nil || inv == nil {
+		return Check{Name: name, Status: CheckWarn, Detail: "inventory unavailable"}
+	}
+	d := inv.Drift
+	if d == nil || !d.Registered {
+		return Check{Name: name, Status: CheckOK,
+			Detail: "no prose vocabulary declared; expansion uses the built-in code edges"}
+	}
+
+	// A graph extracted under one vocabulary and queried under another is the
+	// expensive case and the quiet one: the edges are all there, and expansion
+	// filters every one of them out.
+	if d.StoredFingerprint != "" && d.StoredFingerprint != d.Fingerprint {
+		return Check{Name: name, Status: CheckWarn,
+			Detail: fmt.Sprintf("graph was extracted under vocabulary %s, domain.toml now declares %s",
+				d.StoredFingerprint, d.Fingerprint),
+			Hint: "edges spelled in the old vocabulary are stored and never traversed, so GraphRAG " +
+				"quietly degrades to plain vector search. Re-ingest the affected sources, or restore " +
+				"the previous vocabulary.",
+		}
+	}
+
+	if !d.Clean() {
+		var parts []string
+		if n := len(d.UndeclaredEdgeTypes); n > 0 {
+			parts = append(parts, fmt.Sprintf("%d undeclared edge types (%s)", n, topTypes(d.UndeclaredEdgeTypes)))
+		}
+		if n := len(d.UndeclaredNodeTypes); n > 0 {
+			parts = append(parts, fmt.Sprintf("%d undeclared node types (%s)", n, topTypes(d.UndeclaredNodeTypes)))
+		}
+		return Check{Name: name, Status: CheckWarn, Detail: strings.Join(parts, ", "),
+			Hint: "the extracting model invented these. An undeclared EDGE type is the costly one — " +
+				"expansion filters on the declared vocabulary, so those edges are stored and never " +
+				"walked. Either add the type to domain.toml or re-ingest so it stops being emitted.",
+		}
+	}
+
+	detail := "graph stays inside the declared vocabulary"
+	if n := len(d.UnusedNodeTypes) + len(d.UnusedEdgeTypes); n > 0 {
+		detail += fmt.Sprintf("; %d declared types never extracted", n)
+	}
+	return Check{Name: name, Status: CheckOK, Detail: detail}
+}
+
+// topTypes names the worst offenders, most rows first, so a detail line stays
+// one line however wide the drift is.
+func topTypes(counts map[string]int) string {
+	const show = 3
+	types := make([]string, 0, len(counts))
+	for t := range counts {
+		types = append(types, t)
+	}
+	sort.Slice(types, func(i, j int) bool {
+		if counts[types[i]] != counts[types[j]] {
+			return counts[types[i]] > counts[types[j]]
+		}
+		return types[i] < types[j]
+	})
+	var parts []string
+	for i, t := range types {
+		if i == show {
+			parts = append(parts, fmt.Sprintf("+%d more", len(types)-show))
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s×%d", t, counts[t]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // checkProxy reports when the embedder endpoint would be sent through an HTTP

@@ -2,10 +2,12 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
+	"github.com/liliang-cn/cortexdb/v2/pkg/graph"
 )
 
 // TestExpandEdgeTypesUsesDeclaredRelationTypes pins the fix: what a domain.toml
@@ -151,4 +153,73 @@ func hasString(in []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// A code graph imported next to the prose outnumbers it, and expansion returns
+// neighbours in the graph's own order. Twelve slots handed out in that order go
+// to whatever the importer happened to write first — so an operator asking about
+// a gateway got three `function` nodes and the StoragePool that answers the
+// question queued behind them.
+//
+// The domain's own vocabulary is the tiebreak. Types it never declared come from
+// the importer or from a model inventing one, and they go second.
+func TestDeclaredNeighborTypesAreOfferedFirst(t *testing.T) {
+	s := &Store{}
+	WithOntology("test", []string{"StoragePool", "Gateway"}, nil)(s)
+
+	got := s.pickNeighbors([]*graph.GraphNode{
+		{ID: "f1", NodeType: "function", Content: "mountVolume"},
+		{ID: "f2", NodeType: "function", Content: "exportNFS"},
+		{ID: "p1", NodeType: "StoragePool", Content: "tank"},
+	}, nil, nil)
+
+	if len(got) != 3 {
+		t.Fatalf("neighbours = %v, want all three — undeclared types stay reachable, just behind", got)
+	}
+	if got[0].Type != "StoragePool" {
+		t.Errorf("neighbours = %v, want the declared StoragePool first", got)
+	}
+}
+
+// With nothing declared there is nothing to prefer, and the order must be the
+// graph's — the behaviour every domain had before the vocabulary was consulted.
+func TestNeighborOrderIsUnchangedWithoutADeclaredVocabulary(t *testing.T) {
+	s := &Store{}
+
+	got := s.pickNeighbors([]*graph.GraphNode{
+		{ID: "f1", NodeType: "function", Content: "mountVolume"},
+		{ID: "p1", NodeType: "StoragePool", Content: "tank"},
+	}, nil, nil)
+
+	if len(got) != 2 || got[0].ID != "f1" {
+		t.Errorf("neighbours = %v, want the graph's own order", got)
+	}
+}
+
+// The per-type cap predates the declared/undeclared split and must survive it:
+// one dense type filling the budget is the failure it was written for.
+func TestOneDeclaredTypeStillCannotTakeEveryNeighborSlot(t *testing.T) {
+	s := &Store{}
+	WithOntology("test", []string{"VIP", "Gateway"}, nil)(s)
+
+	nodes := make([]*graph.GraphNode, 0, 7)
+	for i := range 6 {
+		nodes = append(nodes, &graph.GraphNode{ID: fmt.Sprintf("v%d", i), NodeType: "VIP"})
+	}
+	nodes = append(nodes, &graph.GraphNode{ID: "g1", NodeType: "Gateway"})
+
+	got := s.pickNeighbors(nodes, nil, nil)
+
+	vips := 0
+	for _, n := range got {
+		if n.Type == "VIP" {
+			vips++
+		}
+	}
+	if vips != maxNeighborsPerType {
+		t.Errorf("%d VIPs of %d neighbours, want at most %d", vips, len(got), maxNeighborsPerType)
+	}
+	if len(got) != maxNeighborsPerType+1 {
+		t.Errorf("neighbours = %v, want the Gateway to have kept its slot", got)
+	}
 }

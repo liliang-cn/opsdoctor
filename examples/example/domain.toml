@@ -26,6 +26,22 @@ Safety (non-negotiable):
   that it requires explicit operator confirmation and an unlock key.
 '''
 
+# The ontology vocabulary. It is not documentation: three things read it.
+#
+#   1. The ingest-time extractor is told "Use ONLY these types", once per chunk.
+#      Nothing reconciles one chunk's spelling with the next one's, so a
+#      vocabulary that is not closed here is not closed at all.
+#   2. Retrieval expands one hop along relation_types, case-widened. An edge type
+#      that is not declared is stored and never walked, which looks exactly like
+#      having no graph.
+#   3. entity_types are registered with cortexdb as object types implementing a
+#      `DomainEntity` interface. A node of a declared type is offered as a graph
+#      seed, and takes a neighbour slot, ahead of one that is not — imported code
+#      nodes and whatever the model invented stay reachable, just behind.
+#
+# `oss-agent doctor` reports what the graph holds that is not declared here, what
+# is declared and never appeared, and whether the graph was extracted under an
+# older version of these lists.
 entity_types = [
   "Cluster", "Node", "StoragePool", "ResourceGroup", "Resource", "Volume",
   "KernelModule", "ErrorCode", "CLI_Command", "ConfigParameter", "State",
