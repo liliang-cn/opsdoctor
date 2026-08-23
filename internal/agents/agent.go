@@ -137,6 +137,7 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 	}
 	registerProbes(svc, dom.Probes, filter)
 	registerKnowledgeSearch(svc, store)
+	registerGraphWalk(svc, store, dom.RelationTypes)
 	registerSafetyLint(svc, filter)
 	registerSuggestAction(svc, filter)
 	return svc, store, nil
@@ -282,6 +283,92 @@ Grounding (required):
   not retrieve is a guess, and a guess formatted as a code reference is
   indistinguishable from fact until it fails in the operator's hands. When a
   search comes back empty, say what you searched for and stop.`
+
+// registerGraphWalk exposes traversal by name and relation.
+//
+// knowledge_search finds text that is ABOUT something and returns whatever is
+// one hop from it. That is right for "why did failover stall" and wrong for
+// "which pools back this resource": the second has an exact answer sitting in
+// the graph, and routing it through a vector index means hoping the right chunk
+// scores well AND that its neighbourhood happens to contain the answer. Two
+// coin flips for a question the graph can answer outright.
+//
+// It is registered only when the domain declares a relation vocabulary. With no
+// relations to name, the tool degrades to "give me any neighbour", which
+// knowledge_search already does better because it also brings the text.
+func registerGraphWalk(svc *agent.Service, store *knowledge.Store, relations []string) {
+	if len(relations) == 0 {
+		return
+	}
+	params := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"entity": map[string]interface{}{
+				"type":        "string",
+				"description": "The name of the thing to start from, as it appears in the material (a resource, pool, node, gateway, command).",
+			},
+			"relation": map[string]interface{}{
+				"type": "string",
+				"description": "Which relation to follow. Omit to follow every relation. One of: " +
+					strings.Join(relations, ", ") + ".",
+			},
+			"direction": map[string]interface{}{
+				"type": "string",
+				"enum": []string{knowledge.WalkOut, knowledge.WalkIn, knowledge.WalkBoth},
+				"description": "out = what the entity does to others (\"what does it back\"); " +
+					"in = what others do to it (\"what backs it\"); both = either. Defaults to both.",
+			},
+		},
+		"required": []string{"entity"},
+	}
+	svc.AddTool("graph_walk",
+		"Follow the knowledge graph from a named thing along a relation, in a stated direction. "+
+			"Use this when the question is about how two kinds of thing are connected and you can name "+
+			"the starting one — \"which pools back r0\", \"what does this promoter config promote\", "+
+			"\"what state is this resource in\". It answers from the graph's edges, not from retrieved "+
+			"text, so it neither invents nor omits. Use knowledge_search instead when you need the prose: "+
+			"procedures, causes, incident history.",
+		params,
+		func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			entity, _ := args["entity"].(string)
+			relation, _ := args["relation"].(string)
+			direction, _ := args["direction"].(string)
+
+			res, err := store.Walk(ctx, entity, relation, direction)
+			if err != nil {
+				return map[string]interface{}{"ok": false, "error": err.Error()}, nil
+			}
+			out := map[string]interface{}{
+				"ok":    true,
+				"from":  res.From,
+				"steps": res.Steps,
+			}
+			if len(res.Steps) == 0 {
+				// An empty walk and a walk that found nothing are the same
+				// shape, and the difference matters: the graph genuinely not
+				// connecting two things is a finding, while a name it never
+				// heard of is a dead end to back out of rather than report.
+				if res.Match == "" {
+					out["instruction"] = "The graph holds nothing by that name. Check the spelling against " +
+						"something you retrieved, or use knowledge_search to find what it is called."
+				} else {
+					out["instruction"] = "That entity exists in the graph but nothing is connected to it " +
+						"this way. Say so plainly rather than substituting a guess."
+				}
+				return out, nil
+			}
+			// A "contains" match resolved a name by substring, so the walk may
+			// have started somewhere adjacent to what was asked about.
+			if res.Match == "contains" {
+				out["note"] = "The starting name matched loosely; confirm " + res.From + " is what you meant."
+			}
+			if !res.Typed && relation != "" {
+				out["note"] = "This relation declares no ends, so every edge of that type was followed " +
+					"whatever it connects — the directions are the edges' own."
+			}
+			return out, nil
+		})
+}
 
 // registerKnowledgeSearch exposes the GraphRAG knowledge base as a tool.
 func registerKnowledgeSearch(svc *agent.Service, store *knowledge.Store) {

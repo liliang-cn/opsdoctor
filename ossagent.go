@@ -60,6 +60,10 @@ type (
 	Diagnosis = knowledge.Diagnosis
 	// Check is one diagnostic result within a Diagnosis.
 	Check = knowledge.Check
+	// WalkResult is what a graph walk found. See Agent.Walk.
+	WalkResult = knowledge.WalkResult
+	// WalkStep is one node a walk reached.
+	WalkStep = knowledge.WalkStep
 	// Verdict is the red-line wall's ruling on a command.
 	Verdict = safety.Verdict
 	// LogReport is the result of triaging a log file/dir/archive.
@@ -344,6 +348,24 @@ func (a *Agent) Inventory(ctx context.Context) (*Inventory, error) {
 	return a.store.Inventory(ctx)
 }
 
+// Walk follows the knowledge graph from a named entity along a relation, in a
+// direction — WalkOut ("what does it back"), WalkIn ("what backs it") or
+// WalkBoth.
+//
+// This is the question retrieval cannot answer. Search finds text that is ABOUT
+// something and returns whatever is one hop from it; "which pools back this
+// resource" has an exact answer sitting in the graph, and routing it through a
+// vector index means hoping the right chunk scores well AND that its
+// neighbourhood contains the answer.
+//
+// A relation whose ends the domain declared is walked through the ontology, so
+// each result is a node of the far end's declared type — an edge contradicting
+// the declaration is left out rather than returned as though it conformed. One
+// with open ends follows the edges themselves, and says so.
+func (a *Agent) Walk(ctx context.Context, entity, relation, direction string) (*WalkResult, error) {
+	return a.store.Walk(ctx, entity, relation, direction)
+}
+
 // Doctor reports on the retrieval path: whether the embedder is reachable and
 // unproxied, whether the index caps recall, how the corpus splits between code
 // and prose, how much of the graph is unreachable, and how far the extracted
@@ -548,3 +570,10 @@ func parseSuggestion(res any) *Suggestion {
 	}
 	return parsed.Suggestion
 }
+
+// Walk directions, re-exported so a caller never imports an internal package.
+const (
+	WalkOut  = knowledge.WalkOut
+	WalkIn   = knowledge.WalkIn
+	WalkBoth = knowledge.WalkBoth
+)
