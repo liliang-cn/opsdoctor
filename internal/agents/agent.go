@@ -52,9 +52,14 @@ func LLM(cfg config.Config) (agdomain.Generator, error) {
 // ontology schema, which records the vocabulary the graph was extracted under,
 // gives drift a baseline, and is what seeding asks for by interface.
 func StoreOptions(dom *domain.Domain) []knowledge.Option {
+	ends := make([]knowledge.RelationEnd, 0, len(dom.Relations))
+	for _, r := range dom.Relations {
+		ends = append(ends, knowledge.RelationEnd{Name: r.Name, From: r.From, To: r.To})
+	}
 	return []knowledge.Option{
 		knowledge.WithRelationTypes(dom.RelationTypes),
 		knowledge.WithOntology(dom.Name, dom.EntityTypes, dom.RelationTypes),
+		knowledge.WithRelationEnds(ends),
 	}
 }
 

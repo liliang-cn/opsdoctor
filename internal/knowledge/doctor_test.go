@@ -76,3 +76,46 @@ func TestTopTypesNamesTheWorstOffendersAndCountsTheRest(t *testing.T) {
 		t.Errorf("topTypes = %q, want %q", got, want)
 	}
 }
+
+// A relation pointing the wrong way outranks an invented type. An invented type
+// is inert — stored, not walked, visible as an absence. A backwards edge IS
+// walked, and produces an answer that states the opposite of what the source
+// said, fluently.
+func TestDoctorRanksABackwardsRelationAboveAnInventedType(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		UndeclaredNodeTypes: map[string]int{"StorageClass": 3},
+		MisdirectedEdges: []MisdirectedEdge{{
+			Relation: "backs", Want: "StoragePool → DRBDResource",
+			Got: "DRBDResource → StoragePool", Count: 14, Reversed: 14,
+		}},
+	}}, nil)
+
+	if got.Status != CheckWarn {
+		t.Errorf("status = %q, want warn", got.Status)
+	}
+	if !strings.Contains(got.Detail, "backs") {
+		t.Errorf("detail = %q, want the misdirected relation, not the invented type", got.Detail)
+	}
+}
+
+// Every edge of a relation being exactly reversed is one wrong line in
+// domain.toml, not the model erring. Telling those apart is the difference
+// between an edit and a re-ingest.
+func TestDoctorSaysWhenAWholeRelationIsReversed(t *testing.T) {
+	whole := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "a", StoredFingerprint: "a",
+		MisdirectedEdges: []MisdirectedEdge{{Relation: "backs", Count: 14, Reversed: 14}},
+	}}, nil)
+	if !strings.Contains(whole.Hint, "domain.toml") {
+		t.Errorf("hint = %q, want it to point at the declaration", whole.Hint)
+	}
+
+	some := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "a", StoredFingerprint: "a",
+		MisdirectedEdges: []MisdirectedEdge{{Relation: "backs", Count: 14, Reversed: 2}},
+	}}, nil)
+	if !strings.Contains(some.Hint, "Re-ingest") {
+		t.Errorf("hint = %q, want it to point at the sources", some.Hint)
+	}
+}

@@ -458,3 +458,197 @@ func ingestEntities(t *testing.T, s *Store, ents ...cortexdb.ToolEntityInput) {
 	upsert(t, s, ents...)
 	s.noteExtractionVocabulary(context.Background())
 }
+
+// A link's two sides are the traversal's two directions: cortexdb keeps only
+// nodes of the FAR side's object type, so with the open Entity supertype on
+// both sides every ends-aware traversal kept only nodes whose type is literally
+// "Entity" and returned nothing, while the schema read as complete.
+func TestDeclaredEndsAreRegisteredAsTheLinksSides(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs", "contains"}),
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+
+	got, err := s.db.GetOntologySchema(context.Background(), cortexdb.OntologyGetRequest{SchemaID: ontologySchemaID})
+	if err != nil {
+		t.Fatalf("get schema: %v", err)
+	}
+
+	var backs, contains *cortexdb.OntologyLinkType
+	for i := range got.Schema.LinkTypes {
+		switch got.Schema.LinkTypes[i].APIName {
+		case "backs":
+			backs = &got.Schema.LinkTypes[i]
+		case "contains":
+			contains = &got.Schema.LinkTypes[i]
+		}
+	}
+	if backs == nil || contains == nil {
+		t.Fatalf("link types = %+v, want both", got.Schema.LinkTypes)
+	}
+	if backs.A.ObjectTypeAPIName != "StoragePool" || backs.B.ObjectTypeAPIName != "DRBDResource" {
+		t.Errorf("backs runs %s → %s, want StoragePool → DRBDResource",
+			backs.A.ObjectTypeAPIName, backs.B.ObjectTypeAPIName)
+	}
+	// A relation that declared nothing keeps the open supertype: a traversal
+	// that reaches nothing is the honest encoding of "the domain said nothing".
+	if contains.A.ObjectTypeAPIName != entityInterface {
+		t.Errorf("contains declared no ends but its A side is %q", contains.A.ObjectTypeAPIName)
+	}
+}
+
+// A traversal by link SIDE is what the ends buy: "backs" and "backs_of" must
+// mean opposite things. With the supertype on both sides this returned the empty
+// set in both directions.
+func TestDeclaredEndsMakeADirectionalTraversalWork(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
+		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
+	relate(t, s, "tank", "r0", "backs")
+
+	pools, err := s.db.ResolveObjectSet(context.Background(), cortexdb.ObjectSet{
+		Kind: cortexdb.ObjectSetBase, ObjectType: "StoragePool",
+	})
+	if err != nil {
+		t.Fatalf("resolve pools: %v", err)
+	}
+	ids := make([]string, 0, len(pools))
+	for id := range pools {
+		ids = append(ids, id)
+	}
+
+	forward, err := s.db.ResolveObjectSet(context.Background(), cortexdb.ObjectSet{
+		Kind:   cortexdb.ObjectSetSearchAround,
+		Source: &cortexdb.ObjectSet{Kind: cortexdb.ObjectSetStatic, ObjectIDs: ids},
+		Link:   "backs",
+	})
+	if err != nil {
+		t.Fatalf("search around: %v", err)
+	}
+	if len(forward) != 1 {
+		t.Errorf("walking backs from the pool reached %d nodes, want the one resource", len(forward))
+	}
+
+	// And the direction has to be real, not just non-empty. Walking the same
+	// side from the resource end reaches the pool, which is not the far side's
+	// type, so it must select nothing — that is the whole difference between a
+	// link side and a bare edge type filter.
+	backward, err := s.db.ResolveObjectSet(context.Background(), cortexdb.ObjectSet{
+		Kind:   cortexdb.ObjectSetSearchAround,
+		Source: &cortexdb.ObjectSet{Kind: cortexdb.ObjectSetBase, ObjectType: "DRBDResource"},
+		Link:   "backs",
+	})
+	if err != nil {
+		t.Fatalf("search around: %v", err)
+	}
+	if len(backward) != 0 {
+		t.Errorf("walking backs from the resource reached %d nodes, want none — backs runs the other way", len(backward))
+	}
+}
+
+// The ends are part of the vocabulary. Leaving them out of the fingerprint means
+// changing what may sit on either end does not change it — so the registration
+// short-circuit decides the schema is already current, the new ends are never
+// written, and drift goes on reporting a graph as matching a vocabulary it does
+// not.
+func TestChangingARelationsEndsChangesTheFingerprint(t *testing.T) {
+	base := func(opts ...Option) string {
+		s := &Store{}
+		WithOntology("t", []string{"A", "B"}, []string{"backs"})(s)
+		for _, o := range opts {
+			o(s)
+		}
+		return s.vocabularyFingerprint()
+	}
+	a := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: "A", To: "B"}}))
+	b := base(WithRelationEnds([]RelationEnd{{Name: "backs", From: "B", To: "A"}}))
+	if a == b {
+		t.Error("reversing a relation's ends produced the same fingerprint")
+	}
+	if none := base(); none == a {
+		t.Error("declaring ends at all produced the same fingerprint as declaring none")
+	}
+}
+
+// A `backs` asserted from the resource to the pool is stored without complaint,
+// reads as a fact, and is walked as one. Nothing in the answer it produces says
+// the arrow points the wrong way — the declaration is the only thing that can
+// disagree with it.
+func TestDriftFindsRelationsAssertedBackwards(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
+		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
+	relate(t, s, "r0", "tank", "backs") // backwards
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 1 {
+		t.Fatalf("misdirected = %+v, want the one backwards relation", d.MisdirectedEdges)
+	}
+	m := d.MisdirectedEdges[0]
+	if m.Relation != "backs" || m.Reversed != 1 || m.Count != 1 {
+		t.Errorf("misdirected = %+v, want backs, 1 edge, 1 of them exactly reversed", m)
+	}
+	if d.Clean() {
+		t.Error("a relation pointing the wrong way is not a clean graph")
+	}
+}
+
+// An edge the right way round must not be reported, or the check is noise on
+// every healthy graph and gets ignored on the one that is not.
+func TestDriftIsSilentWhenTheEndsMatch(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs"}),
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
+		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
+	relate(t, s, "tank", "r0", "backs")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 0 {
+		t.Errorf("misdirected = %+v, want none", d.MisdirectedEdges)
+	}
+}
+
+// A relation that declared no ends has nothing to contradict. Reporting its
+// edges as misdirected would make declaring ends for one relation flag every
+// other one.
+func TestARelationWithoutDeclaredEndsIsNeverMisdirected(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"StoragePool", "DRBDResource"}, []string{"backs", "related"}),
+		WithRelationEnds([]RelationEnd{{Name: "backs", From: "StoragePool", To: "DRBDResource"}}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "tank", Type: "StoragePool"},
+		cortexdb.ToolEntityInput{Name: "r0", Type: "DRBDResource"})
+	relate(t, s, "r0", "tank", "related") // whichever way round, nothing declared it
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if len(d.MisdirectedEdges) != 0 {
+		t.Errorf("misdirected = %+v, want none", d.MisdirectedEdges)
+	}
+}
+
+// relate writes one edge between two named entities.
+func relate(t *testing.T, s *Store, from, to, edgeType string) {
+	t.Helper()
+	if _, err := s.tb.UpsertRelations(context.Background(), cortexdb.ToolUpsertRelationsRequest{
+		DocumentID: "d1",
+		Relations:  []cortexdb.ToolRelationInput{{From: from, To: to, Type: edgeType}},
+	}); err != nil {
+		t.Fatalf("upsert relation: %v", err)
+	}
+}

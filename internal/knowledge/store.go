@@ -216,6 +216,9 @@ type Store struct {
 	ontologyName  string
 	entityTypes   []string
 	relationTypes []string
+	// relationEnds holds the relations whose ends the domain declared, keyed by
+	// lowercased name. Empty for a domain that declares edge names only.
+	relationEnds map[string]RelationEnd
 }
 
 // Option customizes a Store at Open time.

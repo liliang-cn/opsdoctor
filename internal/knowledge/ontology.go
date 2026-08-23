@@ -51,6 +51,40 @@ func WithOntology(name string, entityTypes, relationTypes []string) Option {
 	}
 }
 
+// RelationEnd is an edge type whose ends the domain declared. See
+// WithRelationEnds.
+type RelationEnd struct {
+	Name string
+	From string
+	To   string
+}
+
+// WithRelationEnds tells the ontology what sits on each end of the relations
+// that have one.
+//
+// A link type registered without ends has to name SOMETHING on each side, so
+// both sides pointed at the open Entity supertype — and cortexdb decides a
+// traversal's direction by keeping only nodes of the far side's type. With
+// Entity on the far side that keeps only nodes whose type is literally
+// "Entity", so every ends-aware traversal over this vocabulary returned nothing
+// while the schema read as complete.
+//
+// Only the relations named here get real ends; the rest keep the supertype and
+// keep behaving as before. That is the honest encoding of a domain.toml that
+// declares ends for some of its edges and not others.
+func WithRelationEnds(ends []RelationEnd) Option {
+	return func(s *Store) {
+		s.relationEnds = make(map[string]RelationEnd, len(ends))
+		for _, e := range ends {
+			e.Name, e.From, e.To = strings.TrimSpace(e.Name), strings.TrimSpace(e.From), strings.TrimSpace(e.To)
+			if e.Name == "" || e.From == "" || e.To == "" {
+				continue
+			}
+			s.relationEnds[strings.ToLower(e.Name)] = e
+		}
+	}
+}
+
 func trimAll(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, s := range in {
@@ -253,18 +287,27 @@ func (s *Store) registerOntology(ctx context.Context) error {
 		})
 	}
 
+	// A link's two sides are the traversal's two directions: cortexdb keeps only
+	// nodes of the FAR side's object type, so the side names are what make
+	// "backs" and "backs_of" mean opposite things. Ends the domain declared go
+	// in as themselves; the rest keep the open supertype, which is a traversal
+	// that reaches nothing and an honest statement that the domain said nothing.
 	links := make([]cortexdb.OntologyLinkType, 0, len(s.relationTypes))
 	for _, t := range s.relationTypes {
+		from, to := entityInterface, entityInterface
+		if e, ok := s.relationEnds[strings.ToLower(t)]; ok {
+			from, to = e.From, e.To
+		}
 		links = append(links, cortexdb.OntologyLinkType{
 			APIName: t,
 			A: cortexdb.OntologyLinkSide{
 				APIName:           t,
-				ObjectTypeAPIName: entityInterface,
+				ObjectTypeAPIName: from,
 				Cardinality:       cortexdb.OntologyCardinalityMany,
 			},
 			B: cortexdb.OntologyLinkSide{
 				APIName:           t + "_of",
-				ObjectTypeAPIName: entityInterface,
+				ObjectTypeAPIName: to,
 				Cardinality:       cortexdb.OntologyCardinalityMany,
 			},
 		})
@@ -333,7 +376,21 @@ func (s *Store) vocabularyFingerprint() string {
 	rels := append([]string(nil), s.relationTypes...)
 	sort.Strings(ents)
 	sort.Strings(rels)
-	sum := sha256.Sum256([]byte(strings.Join(ents, "\x00") + "\x1e" + strings.Join(rels, "\x00")))
+
+	// The ends are part of the vocabulary, not decoration on it. Leaving them
+	// out means changing what may sit on either end of a relation does not
+	// change the fingerprint — so the registration short-circuit decides the
+	// schema is already current and the new ends are never written, while drift
+	// goes on reporting a graph as matching a vocabulary it no longer does.
+	ends := make([]string, 0, len(s.relationEnds))
+	for _, e := range s.relationEnds {
+		ends = append(ends, e.Name+"\x1f"+e.From+"\x1f"+e.To)
+	}
+	sort.Strings(ends)
+
+	sum := sha256.Sum256([]byte(strings.Join(ents, "\x00") +
+		"\x1e" + strings.Join(rels, "\x00") +
+		"\x1e" + strings.Join(ends, "\x00")))
 	return hex.EncodeToString(sum[:8])
 }
 
@@ -445,11 +502,34 @@ type OntologyDrift struct {
 	// model never reaches for is usually one the corpus does not contain.
 	UnusedNodeTypes []string `json:"unused_node_types,omitempty"`
 	UnusedEdgeTypes []string `json:"unused_edge_types,omitempty"`
+
+	// MisdirectedEdges are edges whose real ends contradict the ends the domain
+	// declared for that relation — most often the relation asserted backwards,
+	// which is the single most common thing an extracting model gets wrong and
+	// the one a reader cannot detect from the answer. Only relations that
+	// declared ends can appear here; the rest have nothing to contradict.
+	MisdirectedEdges []MisdirectedEdge `json:"misdirected_edges,omitempty"`
+}
+
+// MisdirectedEdge is one relation's worth of edges that do not match its
+// declared ends.
+type MisdirectedEdge struct {
+	Relation string `json:"relation"`
+	// Want is the declared shape, Got the most common shape actually stored.
+	Want string `json:"want"`
+	Got  string `json:"got"`
+	// Count is how many edges of this relation are wrong, Reversed how many of
+	// those are exactly backwards. A relation entirely reversed is one edit to
+	// domain.toml; one wrong in fifty is the model having a bad day.
+	Count    int `json:"count"`
+	Reversed int `json:"reversed"`
 }
 
 // Clean reports whether the graph stayed inside the declared vocabulary.
 func (d OntologyDrift) Clean() bool {
-	return len(d.UndeclaredNodeTypes) == 0 && len(d.UndeclaredEdgeTypes) == 0
+	return len(d.UndeclaredNodeTypes) == 0 &&
+		len(d.UndeclaredEdgeTypes) == 0 &&
+		len(d.MisdirectedEdges) == 0
 }
 
 // DriftReport compares the types actually in the graph against the vocabulary
@@ -479,7 +559,109 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 
 	d.UndeclaredNodeTypes, d.UnusedNodeTypes = diffVocabulary(s.entityTypes, nodeCounts)
 	d.UndeclaredEdgeTypes, d.UnusedEdgeTypes = diffVocabulary(s.relationTypes, edgeCounts)
+
+	misdirected, err := s.misdirectedEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.MisdirectedEdges = misdirected
 	return d, nil
+}
+
+// misdirectedEdges finds edges whose real ends contradict the declared ones.
+//
+// This is what declaring ends buys, and the reason it is worth a line in
+// domain.toml. An extracted `backs` asserted from the resource to the pool is
+// stored without complaint, reads as a fact, and is walked as one; nothing in
+// the answer it produces says the arrow points the wrong way. The declaration
+// is the only thing that can disagree with it.
+//
+// Reversed is counted separately because the two findings mean different
+// things. A relation reversed on every edge is one wrong line in domain.toml or
+// one confusing sentence in the extraction prompt — a fix. A handful wrong out
+// of many is the model, and the fix is re-ingesting the sources, if anything.
+func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error) {
+	if len(s.relationEnds) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.SQL().QueryContext(ctx, `
+		SELECT e.edge_type,
+		       COALESCE(f.node_type,''),
+		       COALESCE(t.node_type,''),
+		       COUNT(*)
+		  FROM graph_edges e
+		  JOIN graph_nodes f ON f.id = e.from_node_id
+		  JOIN graph_nodes t ON t.id = e.to_node_id
+		 GROUP BY e.edge_type, f.node_type, t.node_type`)
+	if err != nil {
+		return nil, fmt.Errorf("check relation ends: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Accumulated per relation rather than per shape: an operator needs "backs
+	// is backwards", not eleven rows of type pairs to compare by eye.
+	type tally struct {
+		want            string
+		count, reversed int
+		shapes          map[string]int
+	}
+	byRelation := make(map[string]*tally)
+
+	for rows.Next() {
+		var edgeType, fromType, toType string
+		var n int
+		if err := rows.Scan(&edgeType, &fromType, &toType, &n); err != nil {
+			return nil, err
+		}
+		e, declared := s.relationEnds[strings.ToLower(strings.TrimSpace(edgeType))]
+		if !declared {
+			continue
+		}
+		if strings.EqualFold(fromType, e.From) && strings.EqualFold(toType, e.To) {
+			continue
+		}
+		t := byRelation[e.Name]
+		if t == nil {
+			t = &tally{want: e.From + " → " + e.To, shapes: map[string]int{}}
+			byRelation[e.Name] = t
+		}
+		t.count += n
+		t.shapes[fromType+" → "+toType] += n
+		if strings.EqualFold(fromType, e.To) && strings.EqualFold(toType, e.From) {
+			t.reversed += n
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]MisdirectedEdge, 0, len(byRelation))
+	for name, t := range byRelation {
+		out = append(out, MisdirectedEdge{
+			Relation: name, Want: t.want, Got: commonest(t.shapes),
+			Count: t.count, Reversed: t.reversed,
+		})
+	}
+	// Worst first, then by name so two relations equally wrong do not swap
+	// places between runs.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Relation < out[j].Relation
+	})
+	return out, nil
+}
+
+// commonest returns the most frequent key, ties broken by name.
+func commonest(counts map[string]int) string {
+	best, bestN := "", -1
+	for k, n := range counts {
+		if n > bestN || (n == bestN && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
 }
 
 // typeCounts runs a "type, count" query over the graph tables.

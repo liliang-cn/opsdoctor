@@ -107,6 +107,28 @@ func checkVocabularyDrift(inv *Inventory, invErr error) Check {
 		}
 	}
 
+	// A relation pointing the wrong way outranks an invented type. An invented
+	// type is inert — stored, not walked, visible as an absence. A backwards
+	// edge IS walked, and produces an answer that states the opposite of what
+	// the source said, fluently.
+	if len(d.MisdirectedEdges) > 0 {
+		m := d.MisdirectedEdges[0]
+		detail := fmt.Sprintf("%s: %d edges are %s, declared %s", m.Relation, m.Count, m.Got, m.Want)
+		if n := len(d.MisdirectedEdges); n > 1 {
+			detail += fmt.Sprintf(" (+%d more relations)", n-1)
+		}
+		hint := "an edge stored the wrong way round is still traversed, so the answer it supports " +
+			"states the opposite of the source and reads exactly as well."
+		if m.Reversed == m.Count {
+			hint += fmt.Sprintf(" Every %q edge is exactly reversed, which is one wrong line in "+
+				"domain.toml rather than the model erring — check the from/to on that [[relation]].", m.Relation)
+		} else {
+			hint += " Re-ingest the sources these came from; if it persists, the extraction prompt is " +
+				"ambiguous about the direction."
+		}
+		return Check{Name: name, Status: CheckWarn, Detail: detail, Hint: hint}
+	}
+
 	if !d.Clean() {
 		var parts []string
 		if n := len(d.UndeclaredEdgeTypes); n > 0 {

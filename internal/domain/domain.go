@@ -8,6 +8,7 @@ package domain
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -18,11 +19,13 @@ import (
 // Domain bundles the product-specific knowledge that shapes the agent. It is
 // loaded from a domain.toml; the engine treats it as opaque config.
 type Domain struct {
-	Name             string            `toml:"name"`           // human label
-	Title            string            `toml:"title"`          // UI title/brand (defaults to Name)
-	Persona          string            `toml:"persona"`        // agent system prompt
-	EntityTypes      []string          `toml:"entity_types"`   // ontology node types
-	RelationTypes    []string          `toml:"relation_types"` // ontology edge types
+	Name          string   `toml:"name"`           // human label
+	Title         string   `toml:"title"`          // UI title/brand (defaults to Name)
+	Persona       string   `toml:"persona"`        // agent system prompt
+	EntityTypes   []string `toml:"entity_types"`   // ontology node types
+	RelationTypes []string `toml:"relation_types"` // ontology edge types
+	// Relations are the edge types whose ends are known. See Relation.
+	Relations        []Relation        `toml:"relation"`
 	ErrorPatternsRaw []string          `toml:"error_patterns"` // regex sources (group 1 = message)
 	Probes           []probes.Probe    `toml:"probes"`         // read-only diagnostic commands
 	Repos            []string          `toml:"repos"`          // upstream repos to ingest
@@ -33,6 +36,43 @@ type Domain struct {
 
 	// ErrorPatterns are compiled from ErrorPatternsRaw at load time.
 	ErrorPatterns []*regexp.Regexp `toml:"-"`
+}
+
+// Relation is an edge type that says what may sit on each end.
+//
+// relation_types declares edge names and nothing else, which was all the engine
+// could use: a link registered in the ontology had to name an object type on
+// each side, so both ends pointed at one open "Entity" supertype standing for
+// "unconstrained". That is not a neutral placeholder. cortexdb decides a
+// traversal's DIRECTION by keeping only nodes of the far side's type, so a link
+// whose far side is Entity keeps only nodes whose type is literally "Entity" —
+// which is to say almost nothing. Every ends-aware traversal over this
+// vocabulary returned the empty set, and a schema that looks complete returning
+// nothing is exactly the failure the ontology was registered to prevent.
+//
+// Declaring ends is optional and per relation. An edge type left in
+// relation_types keeps the open supertype and keeps behaving as it did: it is
+// extracted, expanded and drift-checked, it just cannot be traversed by
+// direction and its ends are not checked.
+//
+// Ends are single types, not lists, because that is what a link type is: one
+// name, one pair of ends. A relation genuinely polymorphic in its source — a
+// `backs` that starts at a StoragePool or at a BlockDevice — should either stay
+// in relation_types, or be split into two names that mean two different things.
+// Generating a name per combination is not an option: the name IS the edge type
+// in the graph, and "backs__StoragePool_DRBDResource" matches no edge anything
+// ever wrote.
+//
+// One placement trap, which is TOML's and not this schema's: [[relation]] is a
+// table header, so it ends the top-level section. Written next to
+// relation_types — where it reads best — it silently absorbs every top-level key
+// below it, and error_patterns and repos load as keys of a relation nobody
+// reads. Nothing fails. `oss-agent domain` prints the relation-ends count beside
+// the others so the swallowed one shows up as a zero.
+type Relation struct {
+	Name string `toml:"name"`
+	From string `toml:"from"`
+	To   string `toml:"to"`
 }
 
 // Vocabulary partitions the ontology vocabulary by where its edges come from.
@@ -197,6 +237,9 @@ func Load(path string) (*Domain, error) {
 	if len(d.Vocabulary.Code.RelationTypes) == 0 {
 		d.Vocabulary.Code.RelationTypes = append([]string(nil), defaultCodeRelationTypes...)
 	}
+	if err := d.compileRelations(path); err != nil {
+		return nil, err
+	}
 	for _, p := range d.ErrorPatternsRaw {
 		re, err := regexp.Compile(p)
 		if err != nil {
@@ -205,6 +248,81 @@ func Load(path string) (*Domain, error) {
 		d.ErrorPatterns = append(d.ErrorPatterns, re)
 	}
 	return &d, nil
+}
+
+// compileRelations validates the ends-aware relations and folds their names into
+// RelationTypes, so everything downstream sees one edge vocabulary and does not
+// have to know which half of the file a name came from.
+//
+// The ends are validated against entity_types rather than accepted on trust,
+// because cortexdb refuses a whole schema whose link side names an object type
+// it does not declare — and registration is best-effort, so the refusal is a
+// single log line and then a knowledge base that silently has no ontology at
+// all. A typo in a `to =` should cost the load, loudly, not the vocabulary,
+// quietly.
+func (d *Domain) compileRelations(path string) error {
+	declared := make(map[string]struct{}, len(d.EntityTypes))
+	for _, t := range d.EntityTypes {
+		declared[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
+	}
+	known := func(field, name, t string) error {
+		if strings.TrimSpace(t) == "" {
+			return fmt.Errorf("domain %q: relation %q needs a %s", path, name, field)
+		}
+		if _, ok := declared[strings.ToLower(strings.TrimSpace(t))]; !ok {
+			return fmt.Errorf("domain %q: relation %q has %s = %q, which entity_types does not declare",
+				path, name, field, t)
+		}
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(d.Relations))
+	for i := range d.Relations {
+		r := &d.Relations[i]
+		r.Name = strings.TrimSpace(r.Name)
+		r.From = strings.TrimSpace(r.From)
+		r.To = strings.TrimSpace(r.To)
+		if r.Name == "" {
+			return fmt.Errorf("domain %q: a [[relation]] has no name", path)
+		}
+		key := strings.ToLower(r.Name)
+		if _, dup := seen[key]; dup {
+			// Two [[relation]] blocks for one name are two different answers to
+			// "what sits on each end", and only one can be registered. Which one
+			// would be decided by file order.
+			return fmt.Errorf("domain %q: relation %q is declared twice with ends", path, r.Name)
+		}
+		seen[key] = struct{}{}
+		if err := known("from", r.Name, r.From); err != nil {
+			return err
+		}
+		if err := known("to", r.Name, r.To); err != nil {
+			return err
+		}
+	}
+
+	// Listing a name in relation_types AND giving it ends below is the natural
+	// way to write this file — the flat list is the vocabulary, the blocks
+	// refine part of it — so the two are merged rather than treated as a
+	// conflict.
+	for _, r := range d.Relations {
+		if _, listed := indexOfFold(d.RelationTypes, r.Name); !listed {
+			d.RelationTypes = append(d.RelationTypes, r.Name)
+		}
+	}
+	return nil
+}
+
+// indexOfFold finds a case-insensitive match, which is how every other
+// comparison over this vocabulary is done: the spelling in the graph is
+// whatever the extracting model emitted.
+func indexOfFold(haystack []string, needle string) (int, bool) {
+	for i, s := range haystack {
+		if strings.EqualFold(s, needle) {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // SourceGroups returns every group to mine from source files — just the

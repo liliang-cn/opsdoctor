@@ -3,6 +3,7 @@ package domain
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -202,4 +203,120 @@ func TestCodeVocabularyExplicitListWins(t *testing.T) {
 	if !d.AllowsCodeRelation("contains") || d.AllowsCodeRelation("calls") {
 		t.Errorf("relation types = %v, want exactly [contains]", d.Vocabulary.Code.RelationTypes)
 	}
+}
+
+// Ends are validated against entity_types rather than trusted, because cortexdb
+// refuses a whole schema whose link side names an object type it does not
+// declare — and registration is best-effort, so the refusal is one log line and
+// then a knowledge base silently running with no ontology. A typo should cost
+// the load, loudly.
+func TestRelationEndsMustNameDeclaredEntityTypes(t *testing.T) {
+	err := loadTOML(t, `
+entity_types = ["StoragePool", "DRBDResource"]
+
+[[relation]]
+name = "backs"
+from = "StoragePool"
+to   = "DRBDResorce"
+`)
+	if err == nil {
+		t.Fatal("a to = naming an undeclared entity type must fail the load")
+	}
+	if !strings.Contains(err.Error(), "DRBDResorce") {
+		t.Errorf("error = %v, want it to name the typo", err)
+	}
+}
+
+// Listing a relation in relation_types AND giving it ends below is the natural
+// way to write the file: the flat list is the vocabulary, the blocks refine part
+// of it. Merging must not duplicate the name.
+func TestRelationEndsMergeIntoTheEdgeVocabulary(t *testing.T) {
+	d := mustLoadTOML(t, `
+entity_types = ["StoragePool", "DRBDResource"]
+relation_types = ["backs", "contains"]
+
+[[relation]]
+name = "backs"
+from = "StoragePool"
+to   = "DRBDResource"
+`)
+	if want := []string{"backs", "contains"}; !reflect.DeepEqual(d.RelationTypes, want) {
+		t.Errorf("relation types = %v, want %v — declaring ends must not duplicate the name", d.RelationTypes, want)
+	}
+}
+
+// A relation given ends without being listed above is still part of the edge
+// vocabulary; expansion filters on that list, so a name missing from it is an
+// edge type nothing walks.
+func TestARelationDeclaredOnlyWithEndsIsStillInTheVocabulary(t *testing.T) {
+	d := mustLoadTOML(t, `
+entity_types = ["StoragePool", "DRBDResource"]
+
+[[relation]]
+name = "backs"
+from = "StoragePool"
+to   = "DRBDResource"
+`)
+	if want := []string{"backs"}; !reflect.DeepEqual(d.RelationTypes, want) {
+		t.Errorf("relation types = %v, want %v", d.RelationTypes, want)
+	}
+}
+
+// Two blocks for one name are two answers to "what sits on each end", and only
+// one can be registered — which one would be decided by file order.
+func TestARelationCannotDeclareTwoSetsOfEnds(t *testing.T) {
+	err := loadTOML(t, `
+entity_types = ["A", "B", "C"]
+
+[[relation]]
+name = "backs"
+from = "A"
+to   = "B"
+
+[[relation]]
+name = "backs"
+from = "A"
+to   = "C"
+`)
+	if err == nil {
+		t.Fatal("declaring one relation's ends twice must fail the load")
+	}
+}
+
+// A domain that declares edge names only must load exactly as before: ends are
+// optional, and most domain.toml files in the wild predate them.
+func TestEdgeNamesWithoutEndsStillLoad(t *testing.T) {
+	d := mustLoadTOML(t, `
+entity_types = ["StoragePool"]
+relation_types = ["backs", "contains"]
+`)
+	if len(d.Relations) != 0 {
+		t.Errorf("relations = %v, want none declared", d.Relations)
+	}
+	if want := []string{"backs", "contains"}; !reflect.DeepEqual(d.RelationTypes, want) {
+		t.Errorf("relation types = %v, want %v", d.RelationTypes, want)
+	}
+}
+
+func loadTOML(t *testing.T, body string) error {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "domain.toml")
+	if err := os.WriteFile(path, []byte("name = \"t\"\npersona = \"p\"\n"+body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	return err
+}
+
+func mustLoadTOML(t *testing.T, body string) *Domain {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "domain.toml")
+	if err := os.WriteFile(path, []byte("name = \"t\"\npersona = \"p\"\n"+body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	return d
 }

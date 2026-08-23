@@ -891,8 +891,13 @@ env:
 func runDomain() {
 	d := loadDomain(config.Load())
 	fmt.Printf("domain: %s\n", d.Name)
-	fmt.Printf("  entity types : %d\n", len(d.EntityTypes))
+	fmt.Printf("  entity types  : %d\n", len(d.EntityTypes))
 	fmt.Printf("  relation types: %d\n", len(d.RelationTypes))
+	// Counted separately because a [[relation]] is a TOML table header, and one
+	// written above the file's remaining top-level keys silently absorbs them —
+	// error_patterns and repos load as keys of a relation nobody reads. Seeing
+	// the count here next to a suddenly-zero one below is how that gets caught.
+	fmt.Printf("  relation ends : %d\n", len(d.Relations))
 	fmt.Printf("  error patterns: %d\n", len(d.ErrorPatterns))
 	fmt.Printf("  probes        : %d\n", len(d.Probes))
 	fmt.Printf("  repos         : %d\n", len(d.Repos))
