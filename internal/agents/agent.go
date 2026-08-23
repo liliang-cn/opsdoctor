@@ -368,7 +368,7 @@ func registerKnowledgeSearch(svc *agent.Service, store *knowledge.Store) {
 				"ok":                true,
 				"hits":              hits,
 				"found":             true,
-				"related_via_graph": gr.Neighbors,
+				"related_via_graph": graphNeighbors(gr.Neighbors),
 				"relevance_check": "These are the closest chunks in the corpus, NOT necessarily relevant ones — " +
 					"retrieval always returns its best match even when the corpus does not cover the question. " +
 					"Read them before relying on them. If they are not about what was asked, say the knowledge " +
@@ -378,6 +378,45 @@ func registerKnowledgeSearch(svc *agent.Service, store *knowledge.Store) {
 					"grounding you do not have.",
 			}, nil
 		})
+}
+
+// graphNeighbors renders one-hop neighbours for the model, with the direction
+// of each edge spelled out rather than left to be inferred.
+//
+// The struct carried the edge type and nothing else, so a neighbour arrived as
+// {name: "tank", via: "backs"} and there was no way to tell "this resource backs
+// tank" from "tank backs this resource". Those are opposite claims. The model
+// guessed, and the answer read exactly as well either way — which is the failure
+// mode this whole vocabulary exists to prevent, reintroduced one layer below it.
+//
+// Rendered as a sentence rather than a direction flag because a flag has to be
+// read against a convention stated somewhere else, and everything else in this
+// payload is self-describing.
+func graphNeighbors(in []knowledge.Neighbor) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(in))
+	for _, n := range in {
+		name := n.Name
+		if name == "" {
+			name = n.ID
+		}
+		rel := fmt.Sprintf("a retrieved chunk %s %q", n.Via, name)
+		if n.Direction == knowledge.DirectionIncoming {
+			rel = fmt.Sprintf("%q %s a retrieved chunk", name, n.Via)
+		}
+		m := map[string]interface{}{
+			"name":     name,
+			"type":     n.Type,
+			"relation": rel,
+		}
+		if n.Summary != "" {
+			m["summary"] = n.Summary
+		}
+		if n.FilePath != "" {
+			m["file"] = n.FilePath
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // maxEmptySearches is how many consecutive fruitless knowledge_search calls are

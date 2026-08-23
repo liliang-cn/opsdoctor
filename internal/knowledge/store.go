@@ -351,13 +351,30 @@ func (s *Store) Search(ctx context.Context, query string, topK int) ([]Hit, erro
 // Neighbor is a graph node reached by expanding along code-semantic edges from a
 // retrieved hit (one hop). It explains *why* it's related via the edge type.
 type Neighbor struct {
-	ID       string
-	Name     string
-	Type     string
-	Via      string // edge type that connected it to a seed (e.g. "calls", "contains")
-	Summary  string
-	FilePath string
+	ID   string
+	Name string
+	Type string
+	Via  string // edge type that connected it to a seed (e.g. "calls", "contains")
+	// Direction is which way the edge runs: "outgoing" when the retrieved chunk
+	// is the subject (hit —via→ neighbour), "incoming" when the neighbour is
+	// (neighbour —via→ hit).
+	//
+	// Without it a neighbour arrives as {name: "tank", via: "backs"} and there
+	// is no way to tell "this resource backs tank" from "tank backs this
+	// resource" — which are opposite claims, and the model has to guess. It
+	// guessed, fluently, and the answer read as well either way. A relation
+	// whose direction the graph knows and the reader does not is worse than no
+	// relation: it is a fact with the arrow filed off.
+	Direction string
+	Summary   string
+	FilePath  string
 }
+
+// Edge directions as reported to a caller.
+const (
+	DirectionOutgoing = "outgoing"
+	DirectionIncoming = "incoming"
+)
 
 // GraphResult is hybrid retrieval augmented with one-hop graph expansion.
 type GraphResult struct {
@@ -454,21 +471,47 @@ func (s *Store) SearchGraph(ctx context.Context, query string, topK int) (*Graph
 		return res, nil
 	}
 
-	// edge type that connects a seed to each neighbor (for the "via" explanation)
-	via := make(map[string]string)
-	for _, e := range exp.Edges {
+	res.Neighbors = s.pickNeighbors(exp.Nodes, seedSet, edgesToSeeds(exp.Edges, seedSet))
+	return res, nil
+}
+
+// hop is how one neighbour is attached to the retrieved chunks: the edge type,
+// and which way it runs.
+type hop struct {
+	edgeType  string
+	direction string
+}
+
+// edgesToSeeds indexes an expansion's edges by the neighbour they reach,
+// recording the direction as seen FROM the retrieved chunk.
+//
+// A pair joined both ways is reported as the subject's own assertion — "this
+// backs that" rather than "that is backed by this" — which is the reading the
+// retrieved text supports. Outgoing therefore beats incoming whenever the edges
+// arrive in the other order, which is not the same as checking it first within
+// one edge: the graph returns edges in its own order, and first-seen-wins would
+// let the direction depend on it.
+func edgesToSeeds(edges []*graph.GraphEdge, seedSet map[string]struct{}) map[string]hop {
+	hops := make(map[string]hop, len(edges))
+	record := func(neighbor, edgeType, direction string) {
+		if prev, seen := hops[neighbor]; seen &&
+			!(direction == DirectionOutgoing && prev.direction == DirectionIncoming) {
+			return
+		}
+		hops[neighbor] = hop{edgeType, direction}
+	}
+	for _, e := range edges {
+		if e == nil {
+			continue
+		}
 		if _, ok := seedSet[e.FromNodeID]; ok {
-			via[e.ToNodeID] = e.EdgeType
+			record(e.ToNodeID, e.EdgeType, DirectionOutgoing)
 		}
 		if _, ok := seedSet[e.ToNodeID]; ok {
-			if _, seen := via[e.FromNodeID]; !seen {
-				via[e.FromNodeID] = e.EdgeType
-			}
+			record(e.FromNodeID, e.EdgeType, DirectionIncoming)
 		}
 	}
-
-	res.Neighbors = s.pickNeighbors(exp.Nodes, seedSet, via)
-	return res, nil
+	return hops
 }
 
 // pickNeighbors turns an expansion's nodes into the bounded, ordered neighbour
@@ -488,7 +531,7 @@ func (s *Store) SearchGraph(ctx context.Context, query string, topK int) (*Graph
 // in whatever order the graph happened to return. The second pass keeps them
 // reachable — a `function` one hop from an ErrorCode is often exactly the
 // answer — just behind.
-func (s *Store) pickNeighbors(nodes []*graph.GraphNode, seedSet map[string]struct{}, via map[string]string) []Neighbor {
+func (s *Store) pickNeighbors(nodes []*graph.GraphNode, seedSet map[string]struct{}, hops map[string]hop) []Neighbor {
 	var out []Neighbor
 	seen := make(map[string]struct{})
 	perType := make(map[string]int)
@@ -512,7 +555,8 @@ func (s *Store) pickNeighbors(nodes []*graph.GraphNode, seedSet map[string]struc
 			}
 			seen[n.ID] = struct{}{}
 			perType[n.NodeType]++
-			nb := Neighbor{ID: n.ID, Type: n.NodeType, Via: via[n.ID], Name: n.Content}
+			h := hops[n.ID]
+			nb := Neighbor{ID: n.ID, Type: n.NodeType, Via: h.edgeType, Direction: h.direction, Name: n.Content}
 			if p := n.Properties; p != nil {
 				if v, ok := p["name"].(string); ok && v != "" {
 					nb.Name = v

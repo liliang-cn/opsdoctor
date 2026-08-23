@@ -223,3 +223,57 @@ func TestOneDeclaredTypeStillCannotTakeEveryNeighborSlot(t *testing.T) {
 		t.Errorf("neighbours = %v, want the Gateway to have kept its slot", got)
 	}
 }
+
+// A neighbour carried the edge type and nothing else, so it arrived as
+// {name: "tank", via: "backs"} with no way to tell "this resource backs tank"
+// from "tank backs this resource". Those are opposite claims, the model had to
+// guess, and the answer read exactly as well either way — the failure the
+// vocabulary exists to prevent, reintroduced one layer below it.
+func TestANeighborCarriesWhichWayItsEdgeRuns(t *testing.T) {
+	seeds := map[string]struct{}{"hit": {}}
+	edges := []*graph.GraphEdge{
+		{FromNodeID: "hit", ToNodeID: "downstream", EdgeType: "backs"},
+		{FromNodeID: "upstream", ToNodeID: "hit", EdgeType: "protects"},
+	}
+
+	hops := edgesToSeeds(edges, seeds)
+
+	if got := hops["downstream"]; got.direction != DirectionOutgoing || got.edgeType != "backs" {
+		t.Errorf("downstream hop = %+v, want an outgoing backs", got)
+	}
+	if got := hops["upstream"]; got.direction != DirectionIncoming || got.edgeType != "protects" {
+		t.Errorf("upstream hop = %+v, want an incoming protects", got)
+	}
+}
+
+// A pair joined both ways is reported as the subject's own assertion — "this
+// backs that" rather than "that is backed by this" — which is the reading the
+// retrieved text supports.
+func TestAPairJoinedBothWaysReadsAsTheSubjectsAssertion(t *testing.T) {
+	seeds := map[string]struct{}{"hit": {}}
+	hops := edgesToSeeds([]*graph.GraphEdge{
+		{FromNodeID: "other", ToNodeID: "hit", EdgeType: "protects"},
+		{FromNodeID: "hit", ToNodeID: "other", EdgeType: "backs"},
+	}, seeds)
+
+	if got := hops["other"]; got.direction != DirectionOutgoing || got.edgeType != "backs" {
+		t.Errorf("hop = %+v, want the outgoing edge to win", got)
+	}
+}
+
+// The direction has to survive into the Neighbor the caller receives, not stop
+// at the index.
+func TestPickNeighborsKeepsTheDirection(t *testing.T) {
+	s := &Store{}
+	got := s.pickNeighbors(
+		[]*graph.GraphNode{{ID: "n1", NodeType: "StoragePool", Content: "tank"}},
+		map[string]struct{}{"hit": {}},
+		map[string]hop{"n1": {edgeType: "backs", direction: DirectionIncoming}},
+	)
+	if len(got) != 1 {
+		t.Fatalf("neighbours = %v, want one", got)
+	}
+	if got[0].Via != "backs" || got[0].Direction != DirectionIncoming {
+		t.Errorf("neighbour = %+v, want an incoming backs", got[0])
+	}
+}
