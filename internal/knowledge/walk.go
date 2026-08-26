@@ -69,6 +69,11 @@ const (
 // answer, and truncating it silently would make a complete answer look partial.
 const walkLimit = 40
 
+// spellingCandidates bounds how many ranked hits a name resolution considers.
+// Only those spelling the same name survive poolSpellings, so this is a ceiling
+// on the scan rather than on the answer.
+const spellingCandidates = 8
+
 // Walk answers "what is <name> related to by <relation>", by traversing the
 // graph rather than retrieving text about it.
 //
@@ -87,7 +92,10 @@ func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*Wa
 		return nil, fmt.Errorf("direction must be %q, %q or %q", WalkOut, WalkIn, WalkBoth)
 	}
 
-	found, err := s.tb.FindNodes(ctx, cortexdb.ToolFindNodesRequest{Names: []string{name}, Limit: 1})
+	// More than one candidate, because entity ids keep separators and one name
+	// is routinely two nodes — see poolSpellings. Asking for a single best hit
+	// made the walk's answer depend on which spelling the caller typed.
+	found, err := s.tb.FindNodes(ctx, cortexdb.ToolFindNodesRequest{Names: []string{name}, Limit: spellingCandidates})
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", name, err)
 	}
@@ -98,6 +106,7 @@ func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*Wa
 	}
 	start := found.Matches[0].Nodes[0]
 	res := &WalkResult{From: labelOf(start), Match: found.Matches[0].Match, Steps: []WalkStep{}}
+	starts := poolSpellings(found.Matches, name)
 
 	// A relation whose ends the domain declared can be walked by link side,
 	// which is what applies the far end's type. One whose ends are open cannot:
@@ -106,7 +115,7 @@ func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*Wa
 	// that reads exactly like "this node has no such neighbours".
 	if _, typed := s.relationEnds[strings.ToLower(relation)]; typed {
 		res.Typed = true
-		steps, err := s.walkBySide(ctx, start.ID, relation, direction)
+		steps, err := s.walkBySide(ctx, starts, relation, direction)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +123,7 @@ func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*Wa
 		return res, nil
 	}
 
-	steps, err := s.walkByEdge(ctx, start.ID, relation, direction)
+	steps, err := s.walkByEdge(ctx, starts, relation, direction)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +136,7 @@ func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*Wa
 //
 // The A side carries the relation's own name and runs from → to; the B side is
 // named "<relation>_of" and runs the other way. See registerOntology.
-func (s *Store) walkBySide(ctx context.Context, startID, relation, direction string) ([]WalkStep, error) {
+func (s *Store) walkBySide(ctx context.Context, startIDs []string, relation, direction string) ([]WalkStep, error) {
 	sides := map[string]string{}
 	if direction == WalkOut || direction == WalkBoth {
 		sides[relation] = WalkOut
@@ -136,12 +145,18 @@ func (s *Store) walkBySide(ctx context.Context, startID, relation, direction str
 		sides[relation+"_of"] = WalkIn
 	}
 
-	seen := make(map[string]struct{})
+	// The starting nodes are not their own neighbours: two spellings of one
+	// name are often joined to each other, and a walk that returned the other
+	// spelling would answer the question with the question.
+	seen := make(map[string]struct{}, len(startIDs))
+	for _, id := range startIDs {
+		seen[id] = struct{}{}
+	}
 	var steps []WalkStep
 	for _, side := range sortedKeys(sides) {
 		ids, err := s.db.ResolveObjectSet(ctx, cortexdb.ObjectSet{
 			Kind:   cortexdb.ObjectSetSearchAround,
-			Source: &cortexdb.ObjectSet{Kind: cortexdb.ObjectSetStatic, ObjectIDs: []string{startID}},
+			Source: &cortexdb.ObjectSet{Kind: cortexdb.ObjectSetStatic, ObjectIDs: startIDs},
 			Link:   side,
 		})
 		if err != nil {
@@ -182,19 +197,22 @@ func (s *Store) walkBySide(ctx context.Context, startID, relation, direction str
 // arrives at — which is the honest behaviour for a vocabulary that said nothing
 // about the ends. The direction is still reported: that comes from the edge
 // itself, not from the ontology.
-func (s *Store) walkByEdge(ctx context.Context, startID, relation, direction string) ([]WalkStep, error) {
+func (s *Store) walkByEdge(ctx context.Context, startIDs []string, relation, direction string) ([]WalkStep, error) {
 	edgeTypes := s.expandEdgeTypes()
 	if relation != "" {
 		edgeTypes = caseVariants([]string{relation})
 	}
 	exp, err := s.tb.ExpandGraph(ctx, cortexdb.ToolExpandGraphRequest{
-		NodeIDs: []string{startID}, MaxHops: 1, EdgeTypes: edgeTypes, Limit: walkLimit,
+		NodeIDs: startIDs, MaxHops: 1, EdgeTypes: edgeTypes, Limit: walkLimit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walk from %s: %w", startID, err)
+		return nil, fmt.Errorf("walk from %s: %w", strings.Join(startIDs, ", "), err)
 	}
 
-	seeds := map[string]struct{}{startID: {}}
+	seeds := make(map[string]struct{}, len(startIDs))
+	for _, id := range startIDs {
+		seeds[id] = struct{}{}
+	}
 	hops := edgesToSeeds(exp.Edges, seeds)
 	byID := make(map[string]*graph.GraphNode, len(exp.Nodes))
 	for _, n := range exp.Nodes {
@@ -276,4 +294,61 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// poolSpellings picks the start nodes that are the queried name, allowing for
+// how it was written.
+//
+// FindNodes ranks and returns every candidate it reached, including ones it got
+// to by substring. Taking the best one alone made a walk's answer depend on
+// which spelling the caller typed: entity ids keep separators, so "DRBDResource"
+// and "DRBD resource" are two nodes, each holding the edges of whichever
+// documents used that spelling. Both are the same thing and their neighbours
+// belong in one answer.
+//
+// The rule is separators and case, nothing else. A plural is a different word,
+// and folding one would mean guessing at morphology in every language the
+// material is written in — so "DRBD resources" is left to doctor to report
+// rather than merged here on a hunch. Candidates that survive nothing but a
+// substring match are dropped for the same reason.
+//
+// The best match is always kept, so a name that pools with nothing behaves
+// exactly as it did before.
+func poolSpellings(matches []cortexdb.ToolNodeNameMatch, name string) []string {
+	if len(matches) == 0 || len(matches[0].Nodes) == 0 {
+		return nil
+	}
+	want := spellingKey(name)
+	out := []string{matches[0].Nodes[0].ID}
+	seen := map[string]struct{}{out[0]: {}}
+	for _, m := range matches {
+		for _, n := range m.Nodes {
+			if n == nil {
+				continue
+			}
+			if _, dup := seen[n.ID]; dup {
+				continue
+			}
+			if spellingKey(labelOf(n)) != want {
+				continue
+			}
+			seen[n.ID] = struct{}{}
+			out = append(out, n.ID)
+		}
+	}
+	return out
+}
+
+// spellingKey is a name with case and separators removed, which is the
+// difference between two spellings of one name and two different names.
+func spellingKey(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		switch r {
+		case ' ', '_', '-', '.':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

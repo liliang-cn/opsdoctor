@@ -64,6 +64,10 @@ type (
 	WalkResult = knowledge.WalkResult
 	// WalkStep is one node a walk reached.
 	WalkStep = knowledge.WalkStep
+	// SpellingReport is what an entity resolution did. See Agent.ResolveSpellings.
+	SpellingReport = knowledge.SpellingReport
+	// SpellingGroup is one concept and the spellings folded into it.
+	SpellingGroup = knowledge.SpellingGroup
 	// Verdict is the red-line wall's ruling on a command.
 	Verdict = safety.Verdict
 	// LogReport is the result of triaging a log file/dir/archive.
@@ -364,6 +368,20 @@ func (a *Agent) Inventory(ctx context.Context) (*Inventory, error) {
 // with open ends follows the edges themselves, and says so.
 func (a *Agent) Walk(ctx context.Context, entity, relation, direction string) (*WalkResult, error) {
 	return a.store.Walk(ctx, entity, relation, direction)
+}
+
+// ResolveSpellings merges entities that are one concept spelled several ways.
+//
+// Entity ids keep separators, so "DRBDResource" and "DRBD resource" are two
+// nodes and each document's edges attach to whichever spelling it used. Walk
+// pools them at query time; this ends the split in the graph itself, restricted
+// to the types domain.toml declares so a code graph in the same store keeps its
+// same-named files apart.
+//
+// dryRun reports the merges without making them. Deleting a node is not
+// reversible, so a caller should show the list before applying it.
+func (a *Agent) ResolveSpellings(ctx context.Context, dryRun bool) (*SpellingReport, error) {
+	return a.store.ResolveSpellings(ctx, dryRun)
 }
 
 // Doctor reports on the retrieval path: whether the embedder is reachable and

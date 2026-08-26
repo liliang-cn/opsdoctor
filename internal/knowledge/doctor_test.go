@@ -1,8 +1,11 @@
 package knowledge
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	cortexdb "github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
 )
 
 // The drift report existed and was computed on every inventory, but nothing
@@ -118,4 +121,66 @@ func TestDoctorSaysWhenAWholeRelationIsReversed(t *testing.T) {
 	if !strings.Contains(some.Hint, "Re-ingest") {
 		t.Errorf("hint = %q, want it to point at the sources", some.Hint)
 	}
+}
+
+// One concept stored under two spellings is invisible to every other check.
+//
+// Entity ids keep separators, so "DRBDResource" and "DRBD resource" are two
+// nodes. Both carry the declared type, so drift sees nothing wrong; both have
+// edges, so the connectivity check sees nothing wrong; and the graph reports
+// two entities where the material describes one. What splits is the edges —
+// each document's attach to whichever spelling it used. A walk pools them now,
+// but the pair is still worth naming: it is the extractor being inconsistent,
+// and re-ingesting is what actually fixes it.
+func TestDoctorReportsOneThingSpelledTwoWays(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		toolEntity("DRBD resource", "DRBDResource"),
+		toolEntity("DRBDResource", "DRBDResource"),
+		toolEntity("thin pool", "StoragePool"),
+		toolEntity("thinpool", "StoragePool"))
+
+	got := s.checkDuplicateEntities(context.Background())
+
+	if got.Status != CheckWarn {
+		t.Fatalf("status = %q, want warn", got.Status)
+	}
+	if !strings.Contains(got.Detail, "2 ") {
+		t.Errorf("detail = %q, want it to count the pairs", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "DRBD") {
+		t.Errorf("detail = %q, want it to name an example", got.Detail)
+	}
+}
+
+// A plural is a different word and is not reported: the check would then fire
+// on every vocabulary that names both a thing and a set of them, and an
+// operator who cannot act on a warning learns to ignore all of them.
+func TestDoctorDoesNotCallAPluralADuplicate(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		toolEntity("DRBD resource", "DRBDResource"),
+		toolEntity("DRBD resources", "DRBDResource"))
+
+	if got := s.checkDuplicateEntities(context.Background()); got.Status != CheckOK {
+		t.Errorf("status = %q (%s), want ok", got.Status, got.Detail)
+	}
+}
+
+// The code graph names one symbol per package, so main.go in seven packages is
+// seven files rather than seven spellings. Only nodes typed by the prose
+// vocabulary are compared.
+func TestDoctorDoesNotCallTwoFilesOfOneNameADuplicate(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{ID: "file:a/main.go", Name: "main.go", Type: "file"},
+		cortexdb.ToolEntityInput{ID: "file:b/main.go", Name: "main.go", Type: "file"})
+
+	if got := s.checkDuplicateEntities(context.Background()); got.Status != CheckOK {
+		t.Errorf("status = %q (%s), want ok", got.Status, got.Detail)
+	}
+}
+
+func toolEntity(name, typ string) cortexdb.ToolEntityInput {
+	return cortexdb.ToolEntityInput{Name: name, Type: typ}
 }

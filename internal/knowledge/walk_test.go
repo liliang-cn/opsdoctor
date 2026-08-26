@@ -128,7 +128,7 @@ func TestATypedWalkExcludesAnEdgeThatContradictsTheDeclaredEnds(t *testing.T) {
 	// And the same walk without the ontology's help does return it, which is
 	// what makes the exclusion above a property of the declaration rather than
 	// of the data.
-	untyped, err := s.walkByEdge(context.Background(), got0ID(t, s, "r0"), "backs", WalkIn)
+	untyped, err := s.walkByEdge(context.Background(), []string{got0ID(t, s, "r0")}, "backs", WalkIn)
 	if err != nil {
 		t.Fatalf("untyped walk: %v", err)
 	}
@@ -166,4 +166,116 @@ func got0ID(t *testing.T, s *Store, name string) string {
 		t.Fatalf("resolve %q: %v", name, err)
 	}
 	return found.Matches[0].Nodes[0].ID
+}
+
+// One thing spelled two ways is one thing.
+//
+// Entity ids keep separators, so "DRBDResource" lands on entity:drbdresource
+// and "DRBD resource" on entity:drbd_resource. Both are the same concept, both
+// carry the declared type, and whichever spelling the extractor used is where
+// that document's edges attached. Eight pairs had split this way on the SDS
+// base.
+//
+// FindNodes hands back every candidate it ranked, and this walk used to take
+// Matches[0].Nodes[0] and drop the rest — so the answer depended on which
+// spelling the caller happened to type. The failure is worse than a miss: the
+// walk resolves, reports a real match, and says "nothing is connected this
+// way", which reads as a finding about the graph rather than an artefact of
+// spelling.
+func TestWalkPoolsSpellingsOfOneName(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "DRBD resource", Type: "DRBDResource"},
+		cortexdb.ToolEntityInput{Name: "DRBDResource", Type: "DRBDResource"})
+	// The edge attaches to the spaced spelling only.
+	relate(t, s, "tank", "DRBD resource", "backs")
+
+	for _, spelling := range []string{"DRBD resource", "DRBDResource", "drbd_resource", "DRBD-Resource"} {
+		got, err := s.Walk(context.Background(), spelling, "backs", WalkIn)
+		if err != nil {
+			t.Fatalf("walk %q: %v", spelling, err)
+		}
+		if len(got.Steps) != 1 || got.Steps[0].Name != "tank" {
+			t.Errorf("walk %q = %+v, want the pool that backs it", spelling, got.Steps)
+		}
+	}
+}
+
+// Pooling is by separator and case only. FindNodes also returns weaker
+// candidates it reached by substring, and a plural is a different word:
+// collapsing it would take a guess at morphology in every language the material
+// is written in. So "DRBD resources" stays its own node — doctor reports the
+// pair instead of the walk silently merging it.
+func TestWalkDoesNotPoolAPlural(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "DRBD resource", Type: "DRBDResource"},
+		cortexdb.ToolEntityInput{Name: "DRBD resources", Type: "DRBDResource"})
+	relate(t, s, "tank", "DRBD resources", "backs")
+
+	got, err := s.Walk(context.Background(), "DRBD resource", "backs", WalkIn)
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(got.Steps) != 0 {
+		t.Errorf("steps = %+v, want none — a plural is not a spelling", got.Steps)
+	}
+}
+
+// Reporting a split concept without being able to close it leaves the operator
+// holding a warning and no lever. Resolution is cortexdb's, and it merges by
+// the same case/separator key a pooled walk uses — but it reads a node's
+// content as its name, so it must be told this domain's types or it will merge
+// every package's main.go into one file.
+func TestResolveSpellingsMergesOnlyTheDomainsOwnEntities(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "DRBD resource", Type: "DRBDResource"},
+		cortexdb.ToolEntityInput{Name: "DRBDResource", Type: "DRBDResource"},
+		cortexdb.ToolEntityInput{ID: "repo:cli/main.go", Name: "main.go", Type: "file"},
+		cortexdb.ToolEntityInput{ID: "repo:agent/main.go", Name: "main.go", Type: "file"})
+	relate(t, s, "tank", "DRBD resource", "backs")
+
+	report, err := s.ResolveSpellings(context.Background(), false)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if report.Merged != 1 {
+		t.Fatalf("merged = %d (%+v), want only the prose pair", report.Merged, report.Groups)
+	}
+
+	var files int
+	if err := s.db.SQL().QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM graph_nodes WHERE node_type = 'file'`).Scan(&files); err != nil {
+		t.Fatalf("count files: %v", err)
+	}
+	if files != 2 {
+		t.Errorf("file nodes = %d, want the code graph untouched", files)
+	}
+
+	// And the merge is what the walk was papering over: one node now holds the
+	// edge, so doctor goes quiet.
+	if got := s.checkDuplicateEntities(context.Background()); got.Status != CheckOK {
+		t.Errorf("doctor = %q (%s), want it satisfied after the merge", got.Status, got.Detail)
+	}
+}
+
+// A dry run says what it would do and changes nothing, because merging nodes
+// is not reversible and an operator should see the list first.
+func TestResolveSpellingsDryRunChangesNothing(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "DRBD resource", Type: "DRBDResource"},
+		cortexdb.ToolEntityInput{Name: "DRBDResource", Type: "DRBDResource"})
+
+	report, err := s.ResolveSpellings(context.Background(), true)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if report.Merged != 1 || !report.DryRun {
+		t.Fatalf("report = %+v, want it to describe the merge without making it", report)
+	}
+	if got := s.checkDuplicateEntities(context.Background()); got.Status != CheckWarn {
+		t.Errorf("doctor = %q, want the pair still there after a dry run", got.Status)
+	}
 }

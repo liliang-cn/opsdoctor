@@ -72,6 +72,7 @@ func (s *Store) Doctor(ctx context.Context, embBaseURL string) *Diagnosis {
 	d.add(s.checkSourceBalance(ctx, inv, invErr))
 	d.add(s.checkOrphanNodes(ctx))
 	d.add(checkVocabularyDrift(inv, invErr))
+	d.add(s.checkDuplicateEntities(ctx))
 	return d
 }
 
@@ -412,4 +413,92 @@ func ProxyEnvSummary() string {
 	}
 	sort.Strings(set)
 	return strings.Join(set, "\n")
+}
+
+// checkDuplicateEntities reports one concept stored under two spellings.
+//
+// Entity ids are derived from the name with separators kept, so "DRBDResource"
+// lands on entity:drbdresource and "DRBD resource" on entity:drbd_resource.
+// Nothing else notices: both carry the declared type, so drift is satisfied;
+// both have edges, so connectivity is satisfied; and the graph simply reports
+// two entities where the material describes one. What splits is the edges, each
+// document attaching to whichever spelling it happened to use.
+//
+// A walk pools the spellings at query time, so this is no longer wrong answers
+// — but the pair still means the extractor was inconsistent about a name it
+// uses often, and re-ingesting those sources is what actually fixes it.
+//
+// Only nodes typed by the prose vocabulary are compared. The code graph names
+// one symbol per package, so main.go in seven packages is seven files rather
+// than seven spellings of one.
+func (s *Store) checkDuplicateEntities(ctx context.Context) Check {
+	const name = "entity spellings"
+	if len(s.entityTypes) == 0 {
+		return Check{Name: name, Status: CheckOK, Detail: "no prose vocabulary declared"}
+	}
+
+	rows, err := s.db.SQL().QueryContext(ctx,
+		`SELECT content, node_type FROM graph_nodes WHERE id LIKE 'entity:%' AND content <> ''`)
+	if err != nil {
+		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
+	}
+	defer func() { _ = rows.Close() }()
+
+	groups := make(map[string]map[string]struct{})
+	for rows.Next() {
+		var content, nodeType string
+		if err := rows.Scan(&content, &nodeType); err != nil {
+			return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
+		}
+		if !s.declaresNodeType(nodeType) {
+			continue
+		}
+		key := spellingKey(content)
+		if key == "" {
+			continue
+		}
+		if groups[key] == nil {
+			groups[key] = make(map[string]struct{})
+		}
+		groups[key][content] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
+	}
+
+	var examples []string
+	pairs := 0
+	for _, spellings := range groups {
+		if len(spellings) < 2 {
+			continue
+		}
+		pairs++
+		if len(examples) < 3 {
+			examples = append(examples, strings.Join(sortedSet(spellings), " / "))
+		}
+	}
+	if pairs == 0 {
+		return Check{Name: name, Status: CheckOK, Detail: "every entity is spelled one way"}
+	}
+
+	sort.Strings(examples)
+	detail := fmt.Sprintf("%d concepts are stored under more than one spelling: %s",
+		pairs, strings.Join(examples, "; "))
+	if pairs > len(examples) {
+		detail += fmt.Sprintf(" (+%d more)", pairs-len(examples))
+	}
+	return Check{Name: name, Status: CheckWarn, Detail: detail,
+		Hint: "each spelling is its own node, so a document's edges attach to whichever one it " +
+			"used. Walks pool them, but expansion and the neighbour quota still see two entities. " +
+			"Run `oss-agent resolve --dry-run` to see the merges, then without the flag to make them."}
+}
+
+// sortedSet renders a set of spellings in a stable order.
+func sortedSet(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for v := range set {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

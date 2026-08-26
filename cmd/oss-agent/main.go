@@ -39,7 +39,7 @@ import (
 	"github.com/liliang-cn/oss-agent/internal/schemaimport"
 )
 
-const version = "oss-agent 0.22.0"
+const version = "oss-agent 0.23.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -85,6 +85,8 @@ func main() {
 		runExport(os.Args[2:])
 	case "doctor":
 		runDoctor()
+	case "resolve":
+		runResolve(os.Args[2:])
 	case "check":
 		runCheck(strings.Join(os.Args[2:], " "))
 	case "eval":
@@ -211,6 +213,55 @@ func runDoctor() {
 	}
 	if d.Failed {
 		os.Exit(1)
+	}
+}
+
+// runResolve merges entities that are one concept spelled several ways.
+//
+// The pair doctor reports is two nodes for one thing, each holding the edges of
+// whichever documents used that spelling. A walk pools them so answers do not
+// depend on how a name was typed, but expansion and the neighbour quota still
+// see two entities — merging is what ends the split.
+//
+// Dry by default. Deleting a node is not reversible and the list is short
+// enough to read, so the flag is on the side that changes the graph.
+func runResolve(args []string) {
+	apply := false
+	for _, a := range args {
+		switch a {
+		case "--apply":
+			apply = true
+		case "--dry-run", "-n":
+		default:
+			fail("resolve: unknown flag %q (--apply to merge; dry by default)", a)
+		}
+	}
+
+	cfg := config.Load()
+	store, err := openKnowledge(cfg)
+	if err != nil {
+		fail("open knowledge: %v", err)
+	}
+	defer store.Close()
+
+	rep, err := store.ResolveSpellings(context.Background(), !apply)
+	if err != nil {
+		fail("resolve: %v", err)
+	}
+	if len(rep.Groups) == 0 {
+		fmt.Println("every entity is spelled one way; nothing to merge")
+		return
+	}
+	verb := "would merge"
+	if apply {
+		verb = "merged"
+	}
+	fmt.Printf("%s %d nodes into %d concepts:\n", verb, rep.Merged, len(rep.Groups))
+	for _, g := range rep.Groups {
+		fmt.Printf("  %-32s <- %s\n", g.Canonical, strings.Join(g.Aliases, ", "))
+	}
+	if !apply {
+		fmt.Println("\nnothing was changed. re-run with --apply to make these merges.")
 	}
 }
 
@@ -874,6 +925,7 @@ usage:
   oss-agent import-model <f>    import an object model: .proto / OpenAPI .yaml|.json / .h struct / .sql
   oss-agent salvage <repo-dir>  rebuild a graph from a stalled understand run's intermediate batches
   oss-agent check <command...>  test a command against the red-line safety wall
+  oss-agent resolve [--apply]   merge entities that are one concept spelled several ways
   oss-agent version
 
 env:
