@@ -98,3 +98,51 @@ func TestPromptConstrainsWhatItCan(t *testing.T) {
 		t.Errorf("prompt does not ask for stable relation names:\n%s", p)
 	}
 }
+
+// The ends the domain declared have to reach the model, because it is the only
+// place a wrong direction can be prevented rather than detected.
+//
+// The prompt named the relation types and left the model to guess which way
+// each one runs. Everything else read the ends — the ontology's link sides,
+// drift, the typed walk — so a reversed edge was registered against, reported,
+// and excluded from traversal, and still had to be stored first. Measured on
+// the live SDS base: half of `configured_by`'s uses did not match its declared
+// ends, and re-ingesting under the same prompt would only re-roll them.
+func TestPromptStatesTheEndsARelationRunsBetween(t *testing.T) {
+	e := New(nil, &domain.Domain{
+		Name:          "storage",
+		EntityTypes:   []string{"Node", "Volume", "ConfigParameter"},
+		RelationTypes: []string{"configured_by", "backs"},
+		Relations: []domain.Relation{{
+			Name: "configured_by",
+			From: domain.TypeSet{"Node", "Volume"},
+			To:   domain.TypeSet{"ConfigParameter"},
+		}},
+	})
+
+	p := e.prompt("some text")
+	if !strings.Contains(p, "configured_by: Node|Volume -> ConfigParameter") {
+		t.Errorf("prompt does not state configured_by's ends:\n%s", p)
+	}
+	// A relation the domain left open must still be offered, and said to be
+	// open — dropping it would silently shrink the vocabulary the model may
+	// use, and stating an end it does not have would be a lie.
+	if !strings.Contains(p, "backs") {
+		t.Errorf("prompt dropped a relation with no declared ends:\n%s", p)
+	}
+}
+
+// With no ends declared anywhere, the prompt keeps its old shape: a plain list.
+// Rendering an empty ends table would spend prompt budget saying nothing.
+func TestPromptKeepsThePlainListWhenNoEndsAreDeclared(t *testing.T) {
+	e := New(nil, &domain.Domain{
+		Name:          "storage",
+		EntityTypes:   []string{"Node"},
+		RelationTypes: []string{"CONTAINS", "DEPLOYED_ON"},
+	})
+
+	p := e.prompt("some text")
+	if !strings.Contains(p, "Use ONLY these relation types: CONTAINS, DEPLOYED_ON") {
+		t.Errorf("prompt changed shape for a domain that declared no ends:\n%s", p)
+	}
+}

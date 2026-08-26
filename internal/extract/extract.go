@@ -98,6 +98,46 @@ CamelCase nouns for entities (StoragePool, ErrorCode) and UPPER_SNAKE verbs for
 relations (DEPENDS_ON, CONTAINS). Reuse the same name for the same idea in every
 chunk — a synonym coined here is an edge nothing can follow later.`
 
+// relationGuidance names the relation vocabulary, with the ends of every
+// relation that declared them.
+//
+// The prompt used to list the names alone and leave the model to work out which
+// way each one runs. Every other reader of `[[relation]] from/to` — the
+// ontology's link sides, drift, the typed walk — sees the ends, so a reversed
+// edge was registered against, reported and excluded from traversal, and still
+// had to be extracted and stored first. This is the only place the direction
+// can be prevented rather than detected, and it was the one place not told.
+//
+// Relations whose ends the domain left open are still listed, and said to be
+// open: dropping them would quietly shrink the vocabulary the model may use,
+// and inventing an end for them would be a lie.
+func relationGuidance(dom *domain.Domain) string {
+	ends := make(map[string]domain.Relation, len(dom.Relations))
+	for _, r := range dom.Relations {
+		ends[strings.ToLower(r.Name)] = r
+	}
+	if len(ends) == 0 {
+		return fmt.Sprintf("Use ONLY these relation types: %s\n", strings.Join(dom.RelationTypes, ", "))
+	}
+
+	var b strings.Builder
+	b.WriteString("Use ONLY these relation types. Each line gives the ends the relation runs\n" +
+		"between; extract it in that direction and never the reverse:\n")
+	var open []string
+	for _, name := range dom.RelationTypes {
+		r, ok := ends[strings.ToLower(name)]
+		if !ok {
+			open = append(open, name)
+			continue
+		}
+		fmt.Fprintf(&b, "  %s: %s -> %s\n", r.Name, strings.Join(r.From, "|"), strings.Join(r.To, "|"))
+	}
+	if len(open) > 0 {
+		fmt.Fprintf(&b, "  %s: any entity to any entity\n", strings.Join(open, ", "))
+	}
+	return b.String()
+}
+
 func (e *Extractor) prompt(chunk string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Extract a knowledge graph from the %s text below.\n", e.dom.Name)
@@ -105,7 +145,7 @@ func (e *Extractor) prompt(chunk string) string {
 		fmt.Fprintf(&b, "Use ONLY these entity types: %s\n", strings.Join(e.dom.EntityTypes, ", "))
 	}
 	if len(e.dom.RelationTypes) > 0 {
-		fmt.Fprintf(&b, "Use ONLY these relation types: %s\n", strings.Join(e.dom.RelationTypes, ", "))
+		fmt.Fprintf(&b, "%s", relationGuidance(e.dom))
 	}
 	if len(e.dom.EntityTypes) == 0 || len(e.dom.RelationTypes) == 0 {
 		fmt.Fprintf(&b, "%s\n", freeVocabularyGuidance)
