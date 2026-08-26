@@ -341,9 +341,19 @@ func poolSpellings(matches []cortexdb.ToolNodeNameMatch, name string) []string {
 
 // spellingKey is a name with case and separators removed, which is the
 // difference between two spellings of one name and two different names.
+//
+// A leading dash survives: a flag is not a spelling of an identifier. Without
+// it "--read-only" and "ReadOnly" pool, and a question about the API field
+// answers with the flag's neighbours. A CLI's help is ingested precisely so an
+// agent gets a flag right, and conflating the two spends that. It matches
+// cortexdb's canonicalKey, which decides the same thing for a merge.
 func spellingKey(name string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "-") {
+		b.WriteRune('-')
+	}
+	for _, r := range strings.ToLower(name) {
 		switch r {
 		case ' ', '_', '-', '.':
 		default:

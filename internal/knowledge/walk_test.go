@@ -279,3 +279,25 @@ func TestResolveSpellingsDryRunChangesNothing(t *testing.T) {
 		t.Errorf("doctor = %q, want the pair still there after a dry run", got.Status)
 	}
 }
+
+// A flag is not a spelling of an identifier, so a walk must not pool them.
+//
+// The key drops punctuation, which put "--read-only" and "ReadOnly" in one
+// pool: a question about the API field would answer with the flag's neighbours
+// and the other way round. The CLI's help is ingested precisely so the agent
+// gets a flag right, and conflating the two spends that.
+func TestWalkKeepsAFlagApartFromAName(t *testing.T) {
+	s := storageStore(t)
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "--read-only", Type: "Node"},
+		cortexdb.ToolEntityInput{Name: "ReadOnly", Type: "Node"})
+	relate(t, s, "--read-only", "r0", "related")
+
+	got, err := s.Walk(context.Background(), "ReadOnly", "related", WalkOut)
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(got.Steps) != 0 {
+		t.Errorf("steps = %+v, want none — the flag's edges are not the field's", got.Steps)
+	}
+}
