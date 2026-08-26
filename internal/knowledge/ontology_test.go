@@ -827,3 +827,60 @@ func TestAnEdgeBetweenTwoDeclaredTypesIsStillJudged(t *testing.T) {
 		t.Fatalf("misdirected = %+v, want the Package->Gateway edge", d.MisdirectedEdges)
 	}
 }
+
+// An unspecified mention must not demote a declared type.
+//
+// Entity nodes upsert with ON CONFLICT ... SET node_type = excluded.node_type,
+// and an extractor that recognises a name without placing it emits no type at
+// all. Vocabulary mode then canonicalises the blank onto the open Entity
+// supertype — a legitimately declared object type, so nothing rejects it — and
+// the StoragePool that had been extracted with a type is gone.
+//
+// Every consequence the vocabulary buys keys off node_type: drift's
+// declaresNodeType stops counting it, the neighbour quota stops giving it
+// precedence, and a typed walk's far-end filter stops returning it entirely.
+// One chunk that merely mentions "tank" used to remove the pool from every
+// ends-aware traversal, silently — which is the failure this package exists to
+// make impossible, so pin it rather than meet it as retrieval that got worse.
+func TestAnUnspecifiedMentionDoesNotDemoteADeclaredType(t *testing.T) {
+	for _, mention := range []string{"", "entity", "Entity", "ENTITY"} {
+		t.Run("type="+mention, func(t *testing.T) {
+			s := storageStore(t)
+
+			if err := s.UpsertEntities(context.Background(), "d2",
+				[]GraphEntity{{Name: "tank", Type: mention}}); err != nil {
+				t.Fatalf("mention: %v", err)
+			}
+
+			if typ := nodeTypeOf(t, s, "entity:tank"); typ != "StoragePool" {
+				t.Fatalf("node type = %q, want the declared StoragePool to survive the mention", typ)
+			}
+
+			// The consequence, not just the column: the declaration still buys
+			// a typed traversal, which is what the demotion took away.
+			got, err := s.Walk(context.Background(), "r0", "backs", WalkIn)
+			if err != nil {
+				t.Fatalf("walk: %v", err)
+			}
+			if !got.Typed || len(got.Steps) != 1 || got.Steps[0].Name != "tank" {
+				t.Errorf("walk = %+v, want the pool still reachable by its declared end", got)
+			}
+		})
+	}
+}
+
+// A mention that names a type is an assertion, not a blank, so it is allowed to
+// win even when the vocabulary never declared it. Drift reports the invented
+// type; overriding the model here would hide that it disagreed.
+func TestAMentionThatNamesATypeStillWins(t *testing.T) {
+	s := storageStore(t)
+
+	if err := s.UpsertEntities(context.Background(), "d2",
+		[]GraphEntity{{Name: "tank", Type: "Widget"}}); err != nil {
+		t.Fatalf("mention: %v", err)
+	}
+
+	if typ := nodeTypeOf(t, s, "entity:tank"); typ != "Widget" {
+		t.Errorf("node type = %q, want the asserted type to stand", typ)
+	}
+}

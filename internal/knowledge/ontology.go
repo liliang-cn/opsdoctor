@@ -812,3 +812,63 @@ func diffVocabulary(declared []string, found map[string]int) (undeclared map[str
 	sort.Strings(unused)
 	return undeclared, unused
 }
+
+// keepDeclaredTypes stops an unspecified mention from demoting a declared type.
+//
+// Entity nodes upsert with ON CONFLICT ... SET node_type = excluded.node_type,
+// so the last write wins on type. An extractor that recognises a name without
+// placing it emits no type, and vocabulary mode canonicalises the blank onto
+// the open Entity supertype — a type this package declares itself, so nothing
+// downstream rejects it. The node keeps its content and edges and loses the one
+// thing the vocabulary is read for.
+//
+// cortexdb has its own guard for this, but it fires on the literal "entity" an
+// extractor writes, before canonicalisation has folded the blank onto a
+// declared name. That "Entity" means "unspecified" here is this package's
+// convention, so this is where it has to be honoured.
+//
+// A mention that names a type is left alone even when the vocabulary never
+// declared it: that is an assertion, drift reports it, and overriding it here
+// would hide that the model disagreed.
+//
+// Best-effort. A lookup that fails leaves the batch as it came, for the same
+// reason the callers tolerate a failed write: losing a type is bad, refusing to
+// ingest is worse.
+func (s *Store) keepDeclaredTypes(ctx context.Context, ents []cortexdb.ToolEntityInput) {
+	if len(s.entityTypes) == 0 {
+		return
+	}
+	unspecified := make(map[string][]int)
+	for i, e := range ents {
+		t := strings.TrimSpace(e.Type)
+		if t != "" && !strings.EqualFold(t, entityInterface) {
+			continue
+		}
+		id := strings.TrimSpace(e.ID)
+		if id == "" {
+			id = cortexdb.EntityNodeID(e.Name)
+		}
+		unspecified[id] = append(unspecified[id], i)
+	}
+	if len(unspecified) == 0 {
+		return
+	}
+
+	ids := make([]string, 0, len(unspecified))
+	for id := range unspecified {
+		ids = append(ids, id)
+	}
+	nodes, err := s.db.Graph().GetNodesBatch(ctx, ids)
+	if err != nil {
+		log.Printf("[ossagent] knowledge: checking declared types failed, an unspecified mention may demote one: %v", err)
+		return
+	}
+	for _, n := range nodes {
+		if n == nil || !s.declaresNodeType(n.NodeType) {
+			continue
+		}
+		for _, i := range unspecified[n.ID] {
+			ents[i].Type = n.NodeType
+		}
+	}
+}

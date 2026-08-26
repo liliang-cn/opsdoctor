@@ -1101,6 +1101,7 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 			}
 		}
 		if len(ents) > 0 {
+			s.keepDeclaredTypes(ctx, ents)
 			// Same rule as the extraction above, and the same incident: an
 			// ACTIVE cortexdb ontology schema validates every upsert, and one
 			// registered with a primary key the extractor does not emit refused
@@ -1197,6 +1198,7 @@ func (s *Store) UpsertEntities(ctx context.Context, docID string, ents []GraphEn
 	for _, e := range ents {
 		in = append(in, cortexdb.ToolEntityInput{ID: e.ID, Name: e.Name, Type: e.Type, Description: e.Description, Metadata: e.Metadata, ChunkIDs: e.ChunkIDs})
 	}
+	s.keepDeclaredTypes(ctx, in)
 	_, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: in})
 	return err
 }
