@@ -595,6 +595,33 @@ func (s *Store) pickNeighbors(nodes []*graph.GraphNode, seedSet map[string]struc
 // code-graph convention of the time and nothing else, so purging a prose source
 // deleted its vectors and left its whole subgraph behind — a store audited
 // after a few rebuild cycles was 23% orphan nodes.
+// replaceDocumentGraph drops the graph a previous ingest of this document wrote,
+// so that re-ingesting it replaces its extraction instead of adding to it.
+//
+// The vectors need no help: chunk ids are derived from the document id, so a
+// re-ingest overwrites them and the chunk count never moves. An edge's id
+// includes both of its endpoints, so an extraction that reads the text
+// differently — or resolves a name differently, which is what a fixed endpoint
+// resolution does — writes a new edge beside the old one. On the live SDS base
+// one `protects` edge from one document stood in three versions at once, one
+// per ingest, two of them from readings since corrected. Re-ingesting was
+// doctor's only suggested remedy for a bad extraction and could not deliver it.
+//
+// Unlike PurgeSource this leaves the embeddings alone, because the caller has
+// just written the new ones under the same document id.
+func (s *Store) replaceDocumentGraph(ctx context.Context, docID string) error {
+	if strings.TrimSpace(docID) == "" {
+		return nil
+	}
+	// A document the store has never seen deletes nothing and is not an error.
+	if _, err := s.tb.DeleteDocumentGraph(ctx, cortexdb.ToolDeleteDocumentGraphRequest{
+		DocumentID: docID,
+	}); err != nil {
+		return fmt.Errorf("replace graph of %s: %w", docID, err)
+	}
+	return nil
+}
+
 func (s *Store) PurgeSource(ctx context.Context, docMatch string, prefix bool) (embCount, nodeCount int, err error) {
 	sqldb := s.db.SQL()
 	q := `SELECT id, json_extract(metadata,'$.document_id') FROM embeddings WHERE json_extract(metadata,'$.document_id') = ?`
@@ -1050,6 +1077,14 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 	}
 	if err := s.db.InsertTextBatch(ctx, texts, map[string]string{"document_id": docID, "title": title}); err != nil {
 		return fmt.Errorf("embed chunks: %w", err)
+	}
+
+	// Only now that the new chunks are safely stored: an embedder that is down
+	// is the common failure — it happened twice while re-ingesting the SDS
+	// corpus, once mid-run with a 503 — and it must leave the document as it
+	// was rather than strip its graph on the way to failing.
+	if err := s.replaceDocumentGraph(ctx, docID); err != nil {
+		return err
 	}
 	if ex == nil {
 		return nil

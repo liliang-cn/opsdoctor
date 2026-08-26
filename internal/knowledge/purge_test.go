@@ -114,3 +114,75 @@ func TestPurgeSourcePrefixSparesOtherSources(t *testing.T) {
 		t.Fatal("purge touched another source's embeddings")
 	}
 }
+
+// Re-ingesting a document must replace its graph, not add to it.
+//
+// Chunk ids are derived from the document id, so a re-ingest's vectors overwrite
+// the previous ones and the chunk count never moves. Edges are not: their id
+// includes both endpoints, so an extraction that resolves a name differently —
+// or simply reads the text differently — writes a new edge and leaves the old
+// one standing. Re-ingesting could then only add.
+//
+// Measured on the live SDS base: one `protects` edge from one document existed
+// in three versions at once, one per ingest, two of them from readings since
+// fixed. It is why "re-ingest the sources these came from" — which doctor says,
+// and which is the only remedy it offers — could not work.
+func TestReplacingADocumentsGraphRemovesTheOldExtraction(t *testing.T) {
+	s := openPurgeTestStore(t)
+	ctx := context.Background()
+
+	seedProseSource(t, s, "corpus/guide.md", []string{"Snapshot", "Volume"})
+	seedProseSource(t, s, "corpus/other.md", []string{"Node", "Gateway"})
+	if edgeCount(t, s, "corpus/guide.md") == 0 {
+		t.Fatal("fixture wrote no edges")
+	}
+
+	if err := s.replaceDocumentGraph(ctx, "corpus/guide.md"); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+
+	if got := edgeCount(t, s, "corpus/guide.md"); got != 0 {
+		t.Errorf("edges of the re-ingested document = %d, want its graph gone", got)
+	}
+	if got := edgeCount(t, s, "corpus/other.md"); got == 0 {
+		t.Error("another document's graph was taken with it")
+	}
+}
+
+// A document the store has never seen must not fail on the purge.
+func TestReplacingTheGraphOfAnUnknownDocumentIsQuiet(t *testing.T) {
+	if err := openPurgeTestStore(t).replaceDocumentGraph(context.Background(), "corpus/new.md"); err != nil {
+		t.Errorf("replace: %v", err)
+	}
+}
+
+// The purge runs only once the new chunks are safely embedded. An embedder that
+// is down is the common failure — it happened twice while re-ingesting the SDS
+// corpus, once mid-run with a 503 — and it must leave the document exactly as
+// it was rather than stripping its graph on the way to failing.
+func TestAFailedEmbedLeavesTheOldGraphInPlace(t *testing.T) {
+	s := openStore(t) // its embedder address is unroutable by construction
+	ctx := context.Background()
+	seedProseSource(t, s, "corpus/guide.md", []string{"Snapshot", "Volume"})
+	before := edgeCount(t, s, "corpus/guide.md")
+
+	if err := s.IngestSemantic(ctx, "corpus/guide.md", "guide", "prose", nil); err == nil {
+		t.Fatal("ingest succeeded with no embedder; this test proves nothing")
+	}
+
+	if got := edgeCount(t, s, "corpus/guide.md"); got != before {
+		t.Errorf("edges = %d, want the %d it had before a failed ingest", got, before)
+	}
+}
+
+func edgeCount(t *testing.T, s *Store, docID string) int {
+	t.Helper()
+	var n int
+	if err := s.db.SQL().QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM graph_edges
+		 WHERE json_valid(properties) AND json_extract(properties,'$.document_id') = ?`,
+		docID).Scan(&n); err != nil {
+		t.Fatalf("count edges: %v", err)
+	}
+	return n
+}
