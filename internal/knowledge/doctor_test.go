@@ -184,3 +184,46 @@ func TestDoctorDoesNotCallTwoFilesOfOneNameADuplicate(t *testing.T) {
 func toolEntity(name, typ string) cortexdb.ToolEntityInput {
 	return cortexdb.ToolEntityInput{Name: name, Type: typ}
 }
+
+// The count and the shape in one sentence have to be about the same edges.
+//
+// The detail read "%d edges are %s" with the relation's total count and its
+// commonest wrong shape, so a relation wrong in several ways reported all of
+// them as the most popular one. On the live SDS base it said "20 edges are
+// ConfigParameter → ConfigParameter" when twelve were; the other eight were
+// four different shapes. An operator who goes looking for twenty finds twelve
+// and stops trusting the number.
+func TestDoctorDoesNotAttributeEveryWrongEdgeToTheCommonestShape(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		MisdirectedEdges: []MisdirectedEdge{{
+			Relation: "configured_by", Want: "Node → ConfigParameter",
+			Got: "ConfigParameter → ConfigParameter", Count: 20, GotCount: 12,
+		}},
+	}}, nil)
+
+	if strings.Contains(got.Detail, "20 edges are ConfigParameter") {
+		t.Errorf("detail claims every wrong edge has the commonest shape:\n%s", got.Detail)
+	}
+	for _, want := range []string{"20", "12"} {
+		if !strings.Contains(got.Detail, want) {
+			t.Errorf("detail = %q, want it to carry %s", got.Detail, want)
+		}
+	}
+}
+
+// When every wrong edge really does have one shape, say so plainly rather than
+// making the reader compare two equal numbers.
+func TestDoctorSaysPlainlyWhenOneShapeIsAllOfThem(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		MisdirectedEdges: []MisdirectedEdge{{
+			Relation: "notifies", Want: "Event → NotificationChannel",
+			Got: "NotificationChannel → Event", Count: 7, GotCount: 7, Reversed: 7,
+		}},
+	}}, nil)
+
+	if !strings.Contains(got.Detail, "7 edges are NotificationChannel → Event") {
+		t.Errorf("detail = %q, want the plain form when the shape covers them all", got.Detail)
+	}
+}

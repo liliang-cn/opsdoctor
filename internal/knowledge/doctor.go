@@ -114,7 +114,16 @@ func checkVocabularyDrift(inv *Inventory, invErr error) Check {
 	// the source said, fluently.
 	if len(d.MisdirectedEdges) > 0 {
 		m := d.MisdirectedEdges[0]
+		// The count and the shape have to be about the same edges. Pairing the
+		// relation's total with its commonest shape read as a claim about every
+		// one of them: "20 edges are ConfigParameter → ConfigParameter" when
+		// twelve were, and the other eight were four other shapes. Someone who
+		// goes looking for twenty finds twelve and stops trusting the number.
 		detail := fmt.Sprintf("%s: %d edges are %s, declared %s", m.Relation, m.Count, m.Got, m.Want)
+		if m.GotCount > 0 && m.GotCount < m.Count {
+			detail = fmt.Sprintf("%s: %d edges do not match the declared %s; the commonest is %d × %s",
+				m.Relation, m.Count, m.Want, m.GotCount, m.Got)
+		}
 		if n := len(d.MisdirectedEdges); n > 1 {
 			detail += fmt.Sprintf(" (+%d more relations)", n-1)
 		}

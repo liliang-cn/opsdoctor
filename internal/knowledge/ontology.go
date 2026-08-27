@@ -574,6 +574,10 @@ type MisdirectedEdge struct {
 	// domain.toml; one wrong in fifty is the model having a bad day.
 	Count    int `json:"count"`
 	Reversed int `json:"reversed"`
+	// GotCount is how many of Count have the shape Got. A relation can be wrong
+	// in several ways at once, and reporting the total beside the commonest
+	// shape reads as a claim about every one of them.
+	GotCount int `json:"got_count,omitempty"`
 }
 
 // Clean reports whether the graph stayed inside the declared vocabulary.
@@ -708,8 +712,9 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 
 	out := make([]MisdirectedEdge, 0, len(byRelation))
 	for name, t := range byRelation {
+		got := commonest(t.shapes)
 		out = append(out, MisdirectedEdge{
-			Relation: name, Want: t.want, Got: commonest(t.shapes),
+			Relation: name, Want: t.want, Got: got, GotCount: t.shapes[got],
 			Count: t.count, Reversed: t.reversed,
 		})
 	}

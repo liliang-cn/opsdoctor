@@ -138,6 +138,24 @@ func relationGuidance(dom *domain.Domain) string {
 	return b.String()
 }
 
+// flagGuidance keeps a command-line flag from standing in for the entity it
+// selects.
+//
+// A design document listing WANMode and DREndpoint as fields of the Resource
+// struct is saying a resource is configured by those parameters — the relation,
+// the direction and the target all correct — and the model wrote `--resource`
+// as the subject, because that is how a resource is named on a command line.
+// Twelve edges on a live base were exactly this, and the same happened with
+// `--controller` and the keys of the controller's config file.
+//
+// This package ingests a binary's --help as a first-class source, so its
+// material is full of flags sitting beside the things they configure. Only sent
+// with a declared vocabulary: with none, the model is inventing type names and
+// has nothing to express the distinction with.
+const flagGuidance = `A command-line flag or config key NAMES something; it is not that thing. From
+"--resource r0" the entity is r0, and the flag is what configures it. Never put
+a flag where the thing it selects belongs.`
+
 func (e *Extractor) prompt(chunk string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Extract a knowledge graph from the %s text below.\n", e.dom.Name)
@@ -149,6 +167,8 @@ func (e *Extractor) prompt(chunk string) string {
 	}
 	if len(e.dom.EntityTypes) == 0 || len(e.dom.RelationTypes) == 0 {
 		fmt.Fprintf(&b, "%s\n", freeVocabularyGuidance)
+	} else {
+		fmt.Fprintf(&b, "%s\n", flagGuidance)
 	}
 	fmt.Fprintf(&b, `
 Return STRICT JSON only (no prose, no code fence):

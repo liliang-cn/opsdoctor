@@ -146,3 +146,40 @@ func TestPromptKeepsThePlainListWhenNoEndsAreDeclared(t *testing.T) {
 		t.Errorf("prompt changed shape for a domain that declared no ends:\n%s", p)
 	}
 }
+
+// A flag names something; it is not that thing.
+//
+// The WAN design doc lists WANMode, DREndpoint and WANPort as fields of the
+// Resource struct — a DRBD resource configured by those parameters, which is
+// exactly what the vocabulary declares. The model extracted the relation, the
+// direction and the target correctly and got the subject wrong: it wrote
+// `--resource`, the flag that selects a resource, in place of the resource. The
+// same happened with `--controller` and the keys of the controller's config
+// file. Twelve edges on the live base, every one of them right except for
+// standing a flag where its entity belongs.
+//
+// Worth a line of prompt because this package ingests a binary's --help as a
+// first-class source, so its material is full of flags sitting next to the
+// things they configure.
+func TestPromptSaysAFlagIsNotTheThingItNames(t *testing.T) {
+	e := New(nil, &domain.Domain{
+		Name:          "storage",
+		EntityTypes:   []string{"DRBDResource", "ConfigParameter"},
+		RelationTypes: []string{"configured_by"},
+	})
+
+	p := e.prompt("some text")
+	if !strings.Contains(p, flagGuidance) {
+		t.Errorf("prompt does not warn against extracting a flag as its entity:\n%s", p)
+	}
+}
+
+// With no vocabulary the prompt already tells the model to invent one, and this
+// rule is about placing entities the domain named. Adding it there would be
+// prompt spent on a distinction the model has no types to express.
+func TestPromptOmitsTheFlagRuleWithNoVocabulary(t *testing.T) {
+	e := New(nil, &domain.Domain{Name: "storage"})
+	if p := e.prompt("some text"); strings.Contains(p, flagGuidance) {
+		t.Errorf("prompt carries the flag rule with no vocabulary declared:\n%s", p)
+	}
+}
