@@ -142,7 +142,7 @@ func checkVocabularyDrift(inv *Inventory, invErr error) Check {
 		// relation. Naming them is a fact; proposing the retype would have been
 		// wrong half the time.
 		if names, carried := misdirectedNodeSummary(d.MisdirectedNodes); names != "" {
-			hint += fmt.Sprintf(" Most of them run through few nodes: %s — %d of %d edges.",
+			hint += fmt.Sprintf(" They run through few nodes: %s — %d of %d wrong edges.",
 				names, carried, totalMisdirected(d.MisdirectedEdges))
 		}
 		return Check{Name: name, Status: CheckWarn, Detail: detail, Hint: hint}
@@ -531,7 +531,7 @@ func misdirectedNodeSummary(nodes []MisdirectedNode) (string, int) {
 		if n.Edges < 2 || len(parts) == 3 {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%q (a %s, %d)", n.Name, n.Type, n.Edges))
+		parts = append(parts, fmt.Sprintf("%q (%s) on %d", n.Name, n.Type, n.Edges))
 		carried += n.Edges
 	}
 	if len(parts) == 0 {
