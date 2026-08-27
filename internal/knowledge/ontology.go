@@ -560,6 +560,13 @@ type OntologyDrift struct {
 	// the one a reader cannot detect from the answer. Only relations that
 	// declared ends can appear here; the rest have nothing to contradict.
 	MisdirectedEdges []MisdirectedEdge `json:"misdirected_edges,omitempty"`
+
+	// MisdirectedNodes are the nodes those edges run through, worst first. A
+	// relation wrong twenty times is often one node wrong once: a name the
+	// graph typed as one thing and the material means as another sits on every
+	// edge that mentions it. Naming them turns a list of edge complaints into a
+	// short list of things to look at.
+	MisdirectedNodes []MisdirectedNode `json:"misdirected_nodes,omitempty"`
 }
 
 // MisdirectedEdge is one relation's worth of edges that do not match its
@@ -578,6 +585,22 @@ type MisdirectedEdge struct {
 	// in several ways at once, and reporting the total beside the commonest
 	// shape reads as a claim about every one of them.
 	GotCount int `json:"got_count,omitempty"`
+}
+
+// MisdirectedNode is one node that several misdirected edges pass through.
+//
+// Deliberately carries no suggested type. Of the two nodes accounting for six
+// misdirected edges on a live base, one was genuinely mistyped — the source
+// calls `service-ip` a flag and the graph called it a command — and the other,
+// `OCF agents`, was typed correctly and simply is not a configuration
+// parameter. They need opposite fixes, so this says where to look and leaves
+// the judgement where it belongs.
+type MisdirectedNode struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// Edges is how many misdirected edges have this node on the offending end.
+	Edges int `json:"edges"`
 }
 
 // Clean reports whether the graph stayed inside the declared vocabulary.
@@ -620,6 +643,11 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 		return nil, err
 	}
 	d.MisdirectedEdges = misdirected
+	if nodes, err := s.misdirectedNodes(ctx); err != nil {
+		log.Printf("[ossagent] knowledge: finding the nodes behind misdirected edges failed: %v", err)
+	} else {
+		d.MisdirectedNodes = nodes
+	}
 	return d, nil
 }
 
@@ -876,4 +904,97 @@ func (s *Store) keepDeclaredTypes(ctx context.Context, ents []cortexdb.ToolEntit
 			ents[i].Type = n.NodeType
 		}
 	}
+}
+
+// misdirectedNodes finds which nodes the misdirected edges run through.
+//
+// misdirectedEdges groups by type shape, which answers "how is this relation
+// wrong" and not "what is wrong". On a live base eighteen non-conforming edges
+// came from thirteen nodes, and two of those carried six between them: one name
+// the graph typed as a command that the source calls a flag, and one correctly
+// typed thing that simply is not a configuration parameter. Six edges, two
+// places to look.
+//
+// A node carrying a single edge is not reported: that list is the same list of
+// edges in another shape, and for one edge either endpoint "explains" it, which
+// is not a finding.
+func (s *Store) misdirectedNodes(ctx context.Context) ([]MisdirectedNode, error) {
+	if len(s.relationEnds) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.SQL().QueryContext(ctx, `
+		SELECT e.edge_type,
+		       f.id, COALESCE(f.node_type,''), COALESCE(f.content,''),
+		       t.id, COALESCE(t.node_type,''), COALESCE(t.content,''),
+		       COUNT(*)
+		  FROM graph_edges e
+		  JOIN graph_nodes f ON f.id = e.from_node_id
+		  JOIN graph_nodes t ON t.id = e.to_node_id
+		 GROUP BY e.edge_type, f.id, t.id`)
+	if err != nil {
+		return nil, fmt.Errorf("find misdirected nodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type offender struct {
+		id, name, nodeType string
+		edges              int
+	}
+	byNode := make(map[string]*offender)
+	note := func(id, name, nodeType string, n int) {
+		o := byNode[id]
+		if o == nil {
+			o = &offender{id: id, name: name, nodeType: nodeType}
+			byNode[id] = o
+		}
+		o.edges += n
+	}
+
+	for rows.Next() {
+		var edgeType, fromID, fromType, fromName, toID, toType, toName string
+		var n int
+		if err := rows.Scan(&edgeType, &fromID, &fromType, &fromName,
+			&toID, &toType, &toName, &n); err != nil {
+			return nil, err
+		}
+		end, declared := s.relationEnds[strings.ToLower(strings.TrimSpace(edgeType))]
+		if !declared {
+			continue
+		}
+		// Same guard as misdirectedEdges: an edge with a foot outside the prose
+		// vocabulary belongs to the code graph, which shares this namespace and
+		// not this vocabulary.
+		if !s.declaresNodeType(fromType) || !s.declaresNodeType(toType) {
+			continue
+		}
+		okFrom, okTo := containsFold(end.From, fromType), containsFold(end.To, toType)
+		switch {
+		case okFrom && okTo:
+			// Conforming.
+		case okFrom:
+			note(toID, toName, toType, n)
+		case okTo:
+			note(fromID, fromName, fromType, n)
+		default:
+			// Both ends wrong says nothing about either one.
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]MisdirectedNode, 0, len(byNode))
+	for _, o := range byNode {
+		if o.edges < 2 {
+			continue
+		}
+		out = append(out, MisdirectedNode{ID: o.id, Name: o.name, Type: o.nodeType, Edges: o.edges})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Edges != out[j].Edges {
+			return out[i].Edges > out[j].Edges
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
 }

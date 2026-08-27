@@ -136,6 +136,15 @@ func checkVocabularyDrift(inv *Inventory, invErr error) Check {
 			hint += " Re-ingest the sources these came from; if it persists, the extraction prompt is " +
 				"ambiguous about the direction."
 		}
+		// Where to look, rather than what to do: these edges cluster on a few
+		// nodes, and the two that carried six of eighteen on a live base needed
+		// opposite fixes — one was a mistyped node, the other a misused
+		// relation. Naming them is a fact; proposing the retype would have been
+		// wrong half the time.
+		if names, carried := misdirectedNodeSummary(d.MisdirectedNodes); names != "" {
+			hint += fmt.Sprintf(" Most of them run through few nodes: %s — %d of %d edges.",
+				names, carried, totalMisdirected(d.MisdirectedEdges))
+		}
 		return Check{Name: name, Status: CheckWarn, Detail: detail, Hint: hint}
 	}
 
@@ -510,4 +519,33 @@ func sortedSet(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// misdirectedNodeSummary renders the nodes carrying the most misdirected edges,
+// and how many they carry between them. Empty when there is no concentration to
+// point at — a list of nodes with one edge each is the edge list again.
+func misdirectedNodeSummary(nodes []MisdirectedNode) (string, int) {
+	var parts []string
+	carried := 0
+	for _, n := range nodes {
+		if n.Edges < 2 || len(parts) == 3 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%q (a %s, %d)", n.Name, n.Type, n.Edges))
+		carried += n.Edges
+	}
+	if len(parts) == 0 {
+		return "", 0
+	}
+	return strings.Join(parts, ", "), carried
+}
+
+// totalMisdirected sums every relation's wrong edges, which is what the node
+// counts should be read against.
+func totalMisdirected(edges []MisdirectedEdge) int {
+	total := 0
+	for _, e := range edges {
+		total += e.Count
+	}
+	return total
 }

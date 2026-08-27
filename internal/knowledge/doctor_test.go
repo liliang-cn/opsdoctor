@@ -227,3 +227,49 @@ func TestDoctorSaysPlainlyWhenOneShapeIsAllOfThem(t *testing.T) {
 		t.Errorf("detail = %q, want the plain form when the shape covers them all", got.Detail)
 	}
 }
+
+// Misdirected edges cluster on a few nodes, and saying which turns a list of
+// edge complaints into a short list of things to look at.
+//
+// Of eighteen non-conforming edges on the live SDS base, six came from two
+// nodes: `service-ip`, which the source calls a flag and the graph typed a
+// CLICommand, and `OCF agents`, correctly typed and simply not a configuration
+// parameter. The two need opposite fixes — one is a mistyped node, the other a
+// misused relation — so this names the concentration and stops there. Proposing
+// the retype would have been wrong half the time.
+func TestDoctorNamesTheNodesThatMostMisdirectedEdgesRunThrough(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		MisdirectedEdges: []MisdirectedEdge{{
+			Relation: "configured_by", Want: "Gateway → ConfigParameter",
+			Got: "Gateway → CLICommand", Count: 18, GotCount: 3,
+		}},
+		MisdirectedNodes: []MisdirectedNode{
+			{Name: "service-ip", Type: "CLICommand", Edges: 3},
+			{Name: "OCF agents", Type: "OCFAgent", Edges: 3},
+		},
+	}}, nil)
+
+	if !strings.Contains(got.Hint, "service-ip") || !strings.Contains(got.Hint, "OCF agents") {
+		t.Errorf("hint does not name the nodes the edges run through:\n%s", got.Hint)
+	}
+	if !strings.Contains(got.Hint, "6 of") {
+		t.Errorf("hint = %q, want it to say how much of the total they carry", got.Hint)
+	}
+}
+
+// With the edges spread evenly there is no concentration to point at, and a
+// list of one-edge nodes is the same list of complaints in another shape.
+func TestDoctorDoesNotListNodesCarryingOneEdgeEach(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		MisdirectedEdges: []MisdirectedEdge{{
+			Relation: "configured_by", Want: "a", Got: "b", Count: 4, GotCount: 1,
+		}},
+		MisdirectedNodes: []MisdirectedNode{{Name: "one", Type: "T", Edges: 1}},
+	}}, nil)
+
+	if strings.Contains(got.Hint, "one") && strings.Contains(got.Hint, "1 of") {
+		t.Errorf("hint lists a node carrying a single edge:\n%s", got.Hint)
+	}
+}
