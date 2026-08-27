@@ -148,13 +148,21 @@ func relationGuidance(dom *domain.Domain) string {
 // Twelve edges on a live base were exactly this, and the same happened with
 // `--controller` and the keys of the controller's config file.
 //
+// The second half is for the other direction, seen on the same base: a design
+// doc describing fields of a `Resource` struct, with no flag anywhere in the
+// text, and the model writing `--resource` as the subject — coining a flag
+// spelling for something the prose names plainly. Endpoint resolution then
+// found a real `--resource` node from the CLI help and attached nine edges to
+// it.
+//
 // This package ingests a binary's --help as a first-class source, so its
 // material is full of flags sitting beside the things they configure. Only sent
 // with a declared vocabulary: with none, the model is inventing type names and
 // has nothing to express the distinction with.
 const flagGuidance = `A command-line flag or config key NAMES something; it is not that thing. From
 "--resource r0" the entity is r0, and the flag is what configures it. Never put
-a flag where the thing it selects belongs.`
+a flag where the thing it selects belongs, and never invent a flag spelling for
+something the text names in prose — call an entity what the text calls it.`
 
 func (e *Extractor) prompt(chunk string) string {
 	var b strings.Builder
