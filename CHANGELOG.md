@@ -4,6 +4,29 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.32.0 — 2026-08-29
+
+cortexdb 2.85.0 — the drift check stops writing its own SQL.
+
+v0.31.0 recorded that this package reaches past the API to `graph_nodes` and
+`graph_edges`, and that a rewrite underneath those queries is the kind that
+breaks quietly: the SQL still parses, still returns rows, and simply stops
+describing the graph. cortexdb 2.85.0 answers those four questions itself, so
+the four sites in `DriftReport` now ask instead of query — two type censuses,
+`EdgeShapes` for the type-shape grouping behind "is this relation backwards",
+and `EdgeEndpointPairs` for the nodes behind those edges.
+
+Both joins stay unfiltered even though the library will narrow to named edge
+types. The filter matches edge types exactly as stored, and this vocabulary is
+matched by fold: a graph holding `Backs` against a declared `backs` would be
+filtered out at the database and read as a clean relation — the failure the
+check exists to catch, reintroduced by an optimisation.
+
+Verified as a swap and not a rewrite: on one store the API's answers matched the
+replaced SQL field for field on all three, and drift still found the backwards
+edges. Raw SQL remains in this package for the questions 2.85.0 does not answer
+— orphan nodes, entity spellings, the export dump, inventory totals.
+
 ## v0.31.0 — 2026-08-29
 
 cortexdb 2.81.0 → 2.84.4, agent-go v3.10.0 → v3.11.1. No change in this package.

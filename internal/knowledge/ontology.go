@@ -626,11 +626,11 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 
 	d.StoredFingerprint = extractionFingerprintOf(s.storedOntology(ctx))
 
-	nodeCounts, err := s.typeCounts(ctx, "SELECT node_type, COUNT(*) FROM graph_nodes GROUP BY node_type")
+	nodeCounts, err := namedTypeCounts(s.db.Graph().NodeTypeCounts(ctx))
 	if err != nil {
 		return nil, err
 	}
-	edgeCounts, err := s.typeCounts(ctx, "SELECT edge_type, COUNT(*) FROM graph_edges GROUP BY edge_type")
+	edgeCounts, err := namedTypeCounts(s.db.Graph().EdgeTypeCounts(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -667,19 +667,15 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 	if len(s.relationEnds) == 0 {
 		return nil, nil
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT e.edge_type,
-		       COALESCE(f.node_type,''),
-		       COALESCE(t.node_type,''),
-		       COUNT(*)
-		  FROM graph_edges e
-		  JOIN graph_nodes f ON f.id = e.from_node_id
-		  JOIN graph_nodes t ON t.id = e.to_node_id
-		 GROUP BY e.edge_type, f.node_type, t.node_type`)
+	// Every shape, not only the declared relations the library could filter to.
+	// The filter matches edge types exactly as stored, and this vocabulary is
+	// matched case-insensitively — a graph holding `Backs` against a declared
+	// `backs` would be filtered out at the database and read as a clean
+	// relation, which is the failure this whole check exists to catch.
+	shapes, err := s.db.Graph().EdgeShapes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("check relation ends: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
 	// Accumulated per relation rather than per shape: an operator needs "backs
 	// is backwards", not eleven rows of type pairs to compare by eye.
@@ -690,12 +686,8 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 	}
 	byRelation := make(map[string]*tally)
 
-	for rows.Next() {
-		var edgeType, fromType, toType string
-		var n int
-		if err := rows.Scan(&edgeType, &fromType, &toType, &n); err != nil {
-			return nil, err
-		}
+	for _, shape := range shapes {
+		edgeType, fromType, toType, n := shape.EdgeType, shape.FromType, shape.ToType, shape.Count
 		e, declared := s.relationEnds[strings.ToLower(strings.TrimSpace(edgeType))]
 		if !declared {
 			continue
@@ -733,9 +725,6 @@ func (s *Store) misdirectedEdges(ctx context.Context) ([]MisdirectedEdge, error)
 		if containsFold(e.To, fromType) && containsFold(e.From, toType) {
 			t.reversed += n
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	out := make([]MisdirectedEdge, 0, len(byRelation))
@@ -792,26 +781,24 @@ func commonest(counts map[string]int) string {
 	return best
 }
 
-// typeCounts runs a "type, count" query over the graph tables.
-func (s *Store) typeCounts(ctx context.Context, query string) (map[string]int, error) {
-	rows, err := s.db.SQL().QueryContext(ctx, query)
+// namedTypeCounts drops the untyped bucket from one of the graph's censuses.
+//
+// The library counts untyped rows under the empty string rather than omitting
+// them, so that a caller summing the census gets the node total back and "there
+// are 400 nodes nobody typed" stays visible. This caller is comparing against a
+// declared vocabulary, where a blank is not a type the domain forgot to
+// declare: left in, it would be reported as an invented type spelled "".
+func namedTypeCounts(counts map[string]int, err error) (map[string]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("count types: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make(map[string]int)
-	for rows.Next() {
-		var t string
-		var n int
-		if err := rows.Scan(&t, &n); err != nil {
-			return nil, err
-		}
-		if t = strings.TrimSpace(t); t != "" {
-			out[t] = n
+	out := make(map[string]int, len(counts))
+	for name, n := range counts {
+		if name = strings.TrimSpace(name); name != "" {
+			out[name] = n
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // diffVocabulary splits what is in the graph against what was declared.
@@ -922,19 +909,12 @@ func (s *Store) misdirectedNodes(ctx context.Context) ([]MisdirectedNode, error)
 	if len(s.relationEnds) == 0 {
 		return nil, nil
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, `
-		SELECT e.edge_type,
-		       f.id, COALESCE(f.node_type,''), COALESCE(f.content,''),
-		       t.id, COALESCE(t.node_type,''), COALESCE(t.content,''),
-		       COUNT(*)
-		  FROM graph_edges e
-		  JOIN graph_nodes f ON f.id = e.from_node_id
-		  JOIN graph_nodes t ON t.id = e.to_node_id
-		 GROUP BY e.edge_type, f.id, t.id`)
+	// Unfiltered for the same reason as misdirectedEdges: the library matches
+	// edge types exactly and this vocabulary is matched by fold.
+	pairs, err := s.db.Graph().EdgeEndpointPairs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("find misdirected nodes: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
 	type offender struct {
 		id, name, nodeType string
@@ -950,14 +930,11 @@ func (s *Store) misdirectedNodes(ctx context.Context) ([]MisdirectedNode, error)
 		o.edges += n
 	}
 
-	for rows.Next() {
-		var edgeType, fromID, fromType, fromName, toID, toType, toName string
-		var n int
-		if err := rows.Scan(&edgeType, &fromID, &fromType, &fromName,
-			&toID, &toType, &toName, &n); err != nil {
-			return nil, err
-		}
-		end, declared := s.relationEnds[strings.ToLower(strings.TrimSpace(edgeType))]
+	for _, p := range pairs {
+		fromID, fromType, fromName := p.From.ID, p.From.NodeType, p.From.Content
+		toID, toType, toName := p.To.ID, p.To.NodeType, p.To.Content
+		n := p.Count
+		end, declared := s.relationEnds[strings.ToLower(strings.TrimSpace(p.EdgeType))]
 		if !declared {
 			continue
 		}
@@ -978,9 +955,6 @@ func (s *Store) misdirectedNodes(ctx context.Context) ([]MisdirectedNode, error)
 		default:
 			// Both ends wrong says nothing about either one.
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	out := make([]MisdirectedNode, 0, len(byNode))
