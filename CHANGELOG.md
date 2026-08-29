@@ -4,6 +4,17 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.34.0 — 2026-08-29
+
+cortexdb 2.87.0. No change in this package.
+
+Picked up because it fixes a real race rather than a test quirk: two processes
+opening one PostgreSQL brain at once both passed `CREATE EXTENSION IF NOT
+EXISTS` and one lost in the catalogue, which `PostgresStore.Init` turned into a
+refusal to start and `initPgVector` turned into exact scans for the life of the
+store. This package runs on SQLite, so none of it was reachable here — recorded
+so the version this pins is not mistaken for a bump with nothing behind it.
+
 ## v0.33.0 — 2026-08-29
 
 cortexdb 2.86.0 — the graph health checks stop writing SQL too, and this package
