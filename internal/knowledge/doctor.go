@@ -9,6 +9,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	cortexdb "github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
+	"github.com/liliang-cn/cortexdb/v2/pkg/graph"
 )
 
 // Health checks for the retrieval path.
@@ -351,19 +354,15 @@ func (s *Store) checkSourceBalance(ctx context.Context, inv *Inventory, invErr e
 // are rejected, or when repeated ingests accumulate entities nothing can reach.
 func (s *Store) checkOrphanNodes(ctx context.Context) Check {
 	const name = "graph connectivity"
-	var total, orphans int
-	row := s.db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_nodes`)
-	if err := row.Scan(&total); err != nil {
+	// One statement for both numbers, so the share describes one graph rather
+	// than two moments of it.
+	conn, err := s.db.Graph().Connectivity(ctx)
+	if err != nil {
 		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
 	}
+	total, orphans := conn.Nodes, conn.Orphans
 	if total == 0 {
 		return Check{Name: name, Status: CheckOK, Detail: "no graph nodes"}
-	}
-	row = s.db.SQL().QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM graph_nodes n
-		WHERE NOT EXISTS (SELECT 1 FROM graph_edges e WHERE e.from_node_id = n.id OR e.to_node_id = n.id)`)
-	if err := row.Scan(&orphans); err != nil {
-		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
 	}
 	share := float64(orphans) / float64(total)
 	detail := fmt.Sprintf("%d of %d nodes have no edges (%.0f%%)", orphans, total, share*100)
@@ -455,19 +454,20 @@ func (s *Store) checkDuplicateEntities(ctx context.Context) Check {
 		return Check{Name: name, Status: CheckOK, Detail: "no prose vocabulary declared"}
 	}
 
-	rows, err := s.db.SQL().QueryContext(ctx,
-		`SELECT content, node_type FROM graph_nodes WHERE id LIKE 'entity:%' AND content <> ''`)
+	// The prefix comes from the library that assigns it. Spelling "entity:"
+	// here would pair this package's own vocabulary with cortexdb's id
+	// convention, and nothing would fail if that convention changed — the check
+	// would simply find no entities and report every spelling as unique.
+	labels, err := s.db.Graph().NodeLabels(ctx, graph.NodeLabelQuery{
+		IDPrefix: cortexdb.EntityNodeIDPrefix, MinContentLength: 1,
+	})
 	if err != nil {
 		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
 	}
-	defer func() { _ = rows.Close() }()
 
 	groups := make(map[string]map[string]struct{})
-	for rows.Next() {
-		var content, nodeType string
-		if err := rows.Scan(&content, &nodeType); err != nil {
-			return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
-		}
+	for _, l := range labels {
+		content, nodeType := l.Content, l.NodeType
 		if !s.declaresNodeType(nodeType) {
 			continue
 		}
@@ -479,9 +479,6 @@ func (s *Store) checkDuplicateEntities(ctx context.Context) Check {
 			groups[key] = make(map[string]struct{})
 		}
 		groups[key][content] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return Check{Name: name, Status: CheckWarn, Detail: err.Error()}
 	}
 
 	var examples []string

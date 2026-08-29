@@ -825,30 +825,25 @@ func (s *Store) seedsFromHitText(ctx context.Context, hits []Hit, seen map[strin
 	}
 	text := sb.String()
 
-	rows, err := s.db.SQL().QueryContext(ctx,
-		`SELECT id, content FROM graph_nodes WHERE LENGTH(content) >= ?`, minSeedLabel)
+	labels, err := s.db.Graph().NodeLabels(ctx, graph.NodeLabelQuery{MinContentLength: minSeedLabel})
 	if err != nil {
 		// Best-effort, like the expansion it feeds: a query that cannot seed by
 		// label still answers from its vector hits.
 		log.Printf("[ossagent] knowledge: label seeding failed: %v", err)
 		return nil
 	}
-	defer func() { _ = rows.Close() }()
 
 	type cand struct {
 		id      string
 		letters int
 	}
 	var matched []cand
-	for rows.Next() {
-		var id, label string
-		if err := rows.Scan(&id, &label); err != nil {
-			break
-		}
+	for _, nl := range labels {
+		id := nl.ID
 		if _, dup := seen[id]; dup {
 			continue
 		}
-		l := strings.ToLower(strings.TrimSpace(label))
+		l := strings.ToLower(strings.TrimSpace(nl.Content))
 		n := letterCount(l)
 		// A label with almost no letters is an address or a version fragment —
 		// "192.168.123.200/24" — not a concept the retrieved text is about.

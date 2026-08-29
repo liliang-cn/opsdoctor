@@ -4,6 +4,32 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.33.0 — 2026-08-29
+
+cortexdb 2.86.0 — the graph health checks stop writing SQL too, and this package
+stops knowing how cortexdb names an entity.
+
+v0.32.0 moved the drift check onto the library and left four raw queries behind,
+saying they were a different family of question. Two of them were not: "how much
+of the graph is unreachable" and "what are the nodes called" belong to the
+library as much as the type census did, so 2.86.0 answers them and the three
+sites here now ask.
+
+`checkOrphanNodes` used two statements and divided one by the other, so a write
+between them produced a share that was never true — `Connectivity` takes both
+numbers from one statement. `checkDuplicateEntities` matched `id LIKE 'entity:%'`,
+which is worse than reading cortexdb's tables: it read cortexdb's *naming*, and
+nothing would have failed if that changed — the check would have found no
+entities and reported every spelling as unique. It now passes
+`cortexdb.EntityNodeIDPrefix`, exported for this. Label seeding was the same
+query with a length filter instead of a prefix, so it shares the call.
+
+Verified the same way as v0.32.0: on one store the three API answers matched the
+SQL they replaced field for field, and both doctor checks still report.
+
+What is left is genuinely a different family — the export dump, the embeddings
+inventory, the vector-width probe. None of them is a question about the graph.
+
 ## v0.32.0 — 2026-08-29
 
 cortexdb 2.85.0 — the drift check stops writing its own SQL.
