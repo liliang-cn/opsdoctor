@@ -4,6 +4,32 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.35.0 — 2026-09-02
+
+cortexdb 2.90.0, agent-go v3.16.0. One read moved onto the library; the ontology
+was audited and found registered in code but never on this machine's data.
+
+`AllGraph` — the explorer's "draw everything" view — read `graph_nodes` with its
+own SQL, the last raw node read left after v0.33.0. 2.90.0 added `ListNodes`,
+which is the node read without the vector column, and that is exactly what a
+view that wants every node's label and type and none of its embedding should
+ask for. It now does. Edges keep their one SQL statement: the library has no
+"every edge" read, and adding one for a picture is not worth a library surface.
+Checked on a copy of the local store: node, edge, type and file-path counts
+match the SQL they replaced.
+
+agent-go v3.12–v3.16 is task memory, extensions and observability; this package
+calls none of it and nothing it calls changed shape.
+
+The audit: the ontology machinery is complete — vocabulary-mode schema on open,
+interface-first seeding, ends-aware walks, drift and misdirection in `doctor` —
+and `data/knowledge.db` holds zero schemas and only code-graph types, because no
+`domain.toml` sits where `OSS_DOMAIN_FILE` defaults to. Pointing it at the
+example domain registers the schema on first open and drift immediately reports
+the imported code graph (`function`, `imports`, `layer_contains` …) as
+"invented by the extracting model", which it was not. That mislabel is the next
+thing to fix; it is not fixed here.
+
 ## v0.34.0 — 2026-08-29
 
 cortexdb 2.87.0. No change in this package.

@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -740,40 +739,37 @@ func (s *Store) exploreEdgeTypes() []string {
 }
 
 // AllGraph returns the entire knowledge graph (all entity nodes + edges) for the
-// full-graph explorer view. Reads directly via SQL since there's no query seed.
+// full-graph explorer view.
+//
+// Nodes come through the library's ListNodes, which is the node read without
+// the vector column: a vector is the largest thing on a node, and the explorer
+// wants labels and types for every node in the store, so reading it through
+// the general node getter moved every embedding across the driver to draw a
+// picture that uses none of them. Edges still go through SQL — there is no
+// library read for "every edge", and inventing one for a view is more than the
+// view is worth.
 func (s *Store) AllGraph(ctx context.Context) (*GraphView, error) {
 	gv := &GraphView{}
-	sqldb := s.db.SQL()
-	rows, err := sqldb.QueryContext(ctx, `SELECT id, content, node_type, properties FROM graph_nodes`)
+	nodes, err := s.db.Graph().ListNodes(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("query nodes: %w", err)
+		return nil, fmt.Errorf("list nodes: %w", err)
 	}
-	have := make(map[string]struct{})
-	for rows.Next() {
-		var id, content, ntype, props string
-		if err := rows.Scan(&id, &content, &ntype, &props); err != nil {
-			rows.Close()
-			return nil, err
+	have := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		if node == nil || node.ID == "" {
+			continue
 		}
-		n := GraphViewNode{ID: id, Label: content, Type: ntype}
-		if props != "" {
-			var p map[string]interface{}
-			if json.Unmarshal([]byte(props), &p) == nil {
-				if v, ok := p["name"].(string); ok && v != "" {
-					n.Label = v
-				}
-				if v, ok := p["file_path"].(string); ok {
-					n.File = v
-				}
-			}
+		n := GraphViewNode{ID: node.ID, Label: node.Content, Type: node.NodeType}
+		if v, ok := node.Properties["name"].(string); ok && v != "" {
+			n.Label = v
+		}
+		if v, ok := node.Properties["file_path"].(string); ok {
+			n.File = v
 		}
 		gv.Nodes = append(gv.Nodes, n)
-		have[id] = struct{}{}
+		have[node.ID] = struct{}{}
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	sqldb := s.db.SQL()
 	erows, err := sqldb.QueryContext(ctx, `SELECT from_node_id, to_node_id, edge_type FROM graph_edges`)
 	if err != nil {
 		return nil, fmt.Errorf("query edges: %w", err)
