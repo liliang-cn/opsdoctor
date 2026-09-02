@@ -273,3 +273,26 @@ func TestDoctorDoesNotListNodesCarryingOneEdgeEach(t *testing.T) {
 		t.Errorf("hint lists a node carrying a single edge:\n%s", got.Hint)
 	}
 }
+
+// A store carrying the imported code graph beside a clean prose vocabulary is
+// not drifting, and the doctor must not say the model invented `function` and
+// `imports` — it did not, and on a store where the model extracted nothing the
+// accusation had nothing behind it. The imported types are still worth a
+// number on the line, because they are most of what the graph is.
+func TestDoctorDoesNotBlameTheModelForTheImportedCodeGraph(t *testing.T) {
+	got := checkVocabularyDrift(&Inventory{Drift: &OntologyDrift{
+		Registered: true, Fingerprint: "abc", StoredFingerprint: "abc",
+		ImportedEdgeTypes: map[string]int{"imports": 10377, "exports": 1597},
+		ImportedNodeTypes: map[string]int{"function": 2943, "file": 1868},
+	}}, nil)
+
+	if got.Status != CheckOK {
+		t.Errorf("status = %q, want ok: %s", got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "imported") || !strings.Contains(got.Detail, "imports") {
+		t.Errorf("detail = %q, want the imported graph named and counted", got.Detail)
+	}
+	if strings.Contains(got.Hint, "invented") {
+		t.Errorf("hint = %q, must not blame the extracting model", got.Hint)
+	}
+}

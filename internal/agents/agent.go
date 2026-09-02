@@ -21,9 +21,11 @@ import (
 	"github.com/liliang-cn/oss-agent/internal/config"
 	"github.com/liliang-cn/oss-agent/internal/domain"
 	"github.com/liliang-cn/oss-agent/internal/extract"
+	"github.com/liliang-cn/oss-agent/internal/graphimport"
 	"github.com/liliang-cn/oss-agent/internal/knowledge"
 	"github.com/liliang-cn/oss-agent/internal/probes"
 	"github.com/liliang-cn/oss-agent/internal/safety"
+	"github.com/liliang-cn/oss-agent/internal/schemaimport"
 )
 
 // LLM builds a bare LLM generator from config (used by scaffolding/extraction
@@ -60,7 +62,24 @@ func StoreOptions(dom *domain.Domain) []knowledge.Option {
 		knowledge.WithRelationTypes(dom.RelationTypes),
 		knowledge.WithOntology(dom.Name, dom.EntityTypes, dom.RelationTypes),
 		knowledge.WithRelationEnds(ends),
+		knowledge.WithImportedVocabulary(importedEntityTypes(dom), importedRelationTypes(dom)),
 	}
+}
+
+// importedEntityTypes and importedRelationTypes are everything an importer may
+// write: the domain's code vocabulary, which admits the graph file, plus the
+// structural types the importers add on their own. Assembled here rather than
+// in the store because the store cannot know the importers — they import it.
+func importedEntityTypes(dom *domain.Domain) []string {
+	out := append([]string(nil), dom.Vocabulary.Code.EntityTypes...)
+	out = append(out, graphimport.StructuralEntityTypes...)
+	return append(out, schemaimport.TableType)
+}
+
+func importedRelationTypes(dom *domain.Domain) []string {
+	out := append([]string(nil), dom.Vocabulary.Code.RelationTypes...)
+	out = append(out, graphimport.StructuralRelationTypes...)
+	return append(out, schemaimport.ReferencesType)
 }
 
 // BuildExtractor returns an LLM ontology extractor for the domain, or nil if no

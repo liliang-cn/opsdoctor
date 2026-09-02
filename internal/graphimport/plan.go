@@ -178,13 +178,13 @@ func Plan(path, repo string, vocab domain.CodeVocabulary) (*ImportPlan, error) {
 		known[id] = true
 		p.Embed[id] = l.Name + "\n" + l.Description
 		p.Entities = append(p.Entities, knowledge.GraphEntity{
-			ID: id, Name: l.Name, Type: "layer", Description: l.Description,
+			ID: id, Name: l.Name, Type: LayerType, Description: l.Description,
 			Metadata: map[string]string{"repo": repo, "source_id": l.ID},
 			ChunkIDs: []string{id},
 		})
 		for _, nid := range l.NodeIDs {
 			p.Relations = append(p.Relations, knowledge.GraphRelation{
-				From: id, To: namespace(repo, nid), Type: "layer_contains",
+				From: id, To: namespace(repo, nid), Type: LayerContainsType,
 				Metadata: map[string]string{"repo": repo},
 			})
 		}
@@ -194,13 +194,13 @@ func Plan(path, repo string, vocab domain.CodeVocabulary) (*ImportPlan, error) {
 		known[id] = true
 		p.Embed[id] = t.Title + "\n" + t.Description
 		p.Entities = append(p.Entities, knowledge.GraphEntity{
-			ID: id, Name: t.Title, Type: "tour_step", Description: t.Description,
+			ID: id, Name: t.Title, Type: TourStepType, Description: t.Description,
 			Metadata: map[string]string{"repo": repo, "order": strconv.Itoa(t.Order)},
 			ChunkIDs: []string{id},
 		})
 		for _, nid := range t.NodeIDs {
 			p.Relations = append(p.Relations, knowledge.GraphRelation{
-				From: id, To: namespace(repo, nid), Type: "tour_covers",
+				From: id, To: namespace(repo, nid), Type: TourCoversType,
 				Metadata: map[string]string{"repo": repo},
 			})
 		}
@@ -247,3 +247,22 @@ func Plan(path, repo string, vocab domain.CodeVocabulary) (*ImportPlan, error) {
 	}
 	return p, nil
 }
+
+// The structural types this importer writes on its own, beside the code
+// vocabulary the graph file is admitted under. Layers and tour steps are the
+// tool's reading of the code, not the code, so no domain.toml declares them —
+// this package does, and exports the names so the store can be told what to
+// expect from an import. See StructuralEntityTypes.
+const (
+	LayerType         = "layer"
+	TourStepType      = "tour_step"
+	LayerContainsType = "layer_contains"
+	TourCoversType    = "tour_covers"
+)
+
+// StructuralEntityTypes and StructuralRelationTypes are every type Import may
+// write that is not in the code vocabulary it was given.
+var (
+	StructuralEntityTypes   = []string{LayerType, TourStepType}
+	StructuralRelationTypes = []string{LayerContainsType, TourCoversType}
+)

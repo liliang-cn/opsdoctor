@@ -4,6 +4,32 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.36.0 — 2026-09-02
+
+Drift stops blaming the extracting model for the imported code graph.
+
+v0.35.0 recorded the finding: point `OSS_DOMAIN_FILE` at any domain and
+`doctor` reports `function`, `file`, `imports` and `layer_contains` as types
+"the extracting model invented" — on a store where the model had extracted
+nothing. Drift compared the whole graph against the prose vocabulary alone,
+and the code graph `ingest-repo` writes was never going to be in it. The one
+type nobody declared anywhere sat fourth on a list of twenty-six.
+
+The domain already declares the other vocabulary — `[vocabulary.code]`, the
+importer's admission list — and the two importers write four structural types
+of their own (layers, tour steps, tables, foreign keys) that no domain.toml
+names because no domain should. `StoreOptions` now hands the store all of it as
+`WithImportedVocabulary`, and `DriftReport` partitions what the prose vocabulary
+did not claim into `ImportedNodeTypes`/`ImportedEdgeTypes` and what is still
+undeclared. Only the second is drift. The imported match is exact, the way the
+importer's own check is: CONTAINS and contains share a word and nothing else.
+
+`doctor` on the local store with the example domain went from a warning naming
+26 "invented" types to: graph stays inside the declared vocabulary; 14 imported
+code-graph edge types beside it (imports×10377, exports×1597, layer_contains×952,
++11 more). The importers' structural type names are exported constants now so
+the list the store is told cannot drift from what the importers write.
+
 ## v0.35.0 — 2026-09-02
 
 cortexdb 2.90.0, agent-go v3.16.0. One read moved onto the library; the ontology

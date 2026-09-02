@@ -170,6 +170,14 @@ func checkVocabularyDrift(inv *Inventory, invErr error) Check {
 	if n := len(d.UnusedNodeTypes) + len(d.UnusedEdgeTypes); n > 0 {
 		detail += fmt.Sprintf("; %d declared types never extracted", n)
 	}
+	// The imported code graph is not drift, but on most stores it is most of
+	// the graph, and a line that only said "inside the vocabulary" over six
+	// thousand imported nodes read as if the base were nearly empty.
+	if n := len(d.ImportedEdgeTypes); n > 0 {
+		detail += fmt.Sprintf("; %d imported code-graph edge types beside it (%s)", n, topTypes(d.ImportedEdgeTypes))
+	} else if n := len(d.ImportedNodeTypes); n > 0 {
+		detail += fmt.Sprintf("; %d imported code-graph node types beside it (%s)", n, topTypes(d.ImportedNodeTypes))
+	}
 	return Check{Name: name, Status: CheckOK, Detail: detail}
 }
 

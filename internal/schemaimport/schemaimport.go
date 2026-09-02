@@ -52,7 +52,7 @@ func Import(ctx context.Context, store *knowledge.Store, path string) (Stats, er
 		}
 		known[strings.ToUpper(t.Name)] = id
 		ents = append(ents, knowledge.GraphEntity{
-			ID: id, Name: t.Name, Type: "Table", Description: desc, ChunkIDs: []string{id},
+			ID: id, Name: t.Name, Type: TableType, Description: desc, ChunkIDs: []string{id},
 		})
 		batch[id] = t.Name + "\n" + desc
 		st.Tables++
@@ -76,7 +76,7 @@ func Import(ctx context.Context, store *knowledge.Store, path string) (Stats, er
 			if !ok || to == from {
 				continue
 			}
-			rels = append(rels, knowledge.GraphRelation{From: from, To: to, Type: "REFERENCES"})
+			rels = append(rels, knowledge.GraphRelation{From: from, To: to, Type: ReferencesType})
 			st.FKs++
 		}
 	}
@@ -93,3 +93,12 @@ func baseName(path string) string {
 	}
 	return strings.TrimSuffix(p, ".sql")
 }
+
+// The types this importer writes. Cased as the object model reads them, which
+// is not how the code vocabulary spells its lowercase `table` — a schema's
+// tables are a product's own objects, not the tool's reading of source, and
+// keeping them distinct is what lets a walk ask for one and not the other.
+const (
+	TableType      = "Table"
+	ReferencesType = "REFERENCES"
+)

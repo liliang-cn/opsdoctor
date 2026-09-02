@@ -884,3 +884,81 @@ func TestAMentionThatNamesATypeStillWins(t *testing.T) {
 		t.Errorf("node type = %q, want the asserted type to stand", typ)
 	}
 }
+
+// The imported code graph is not drift. `ingest-repo` writes files, functions
+// and `imports` edges under a vocabulary the domain declares separately from
+// the prose one, and nothing in the prose vocabulary ever will name them — so
+// judging them against it reported every imported type as "invented by the
+// extracting model", on a store where the model had extracted nothing. That
+// buried the one line drift exists to surface: the type nobody declared
+// anywhere.
+func TestDriftSeparatesTheImportedCodeGraphFromInventedTypes(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Node", "Gateway"}, []string{"backs"}),
+		WithImportedVocabulary([]string{"file", "function"}, []string{"imports"}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "server.go", Type: "file"},
+		cortexdb.ToolEntityInput{Name: "Serve", Type: "function"},
+		cortexdb.ToolEntityInput{Name: "fast", Type: "StorageClass"})
+	relate(t, s, "server.go", "Serve", "imports")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if want := map[string]int{"StorageClass": 1}; !reflect.DeepEqual(d.UndeclaredNodeTypes, want) {
+		t.Errorf("undeclared nodes = %v, want %v — only the type no vocabulary names", d.UndeclaredNodeTypes, want)
+	}
+	if len(d.UndeclaredEdgeTypes) != 0 {
+		t.Errorf("undeclared edges = %v, want none — imports is the code graph's", d.UndeclaredEdgeTypes)
+	}
+	if want := map[string]int{"file": 1, "function": 1}; !reflect.DeepEqual(d.ImportedNodeTypes, want) {
+		t.Errorf("imported nodes = %v, want %v", d.ImportedNodeTypes, want)
+	}
+	if want := map[string]int{"imports": 1}; !reflect.DeepEqual(d.ImportedEdgeTypes, want) {
+		t.Errorf("imported edges = %v, want %v", d.ImportedEdgeTypes, want)
+	}
+	if d.Clean() {
+		t.Error("StorageClass is still drift")
+	}
+}
+
+// A store holding nothing but the imported code graph is clean: every type in
+// it is one somebody declared, just not in the prose list.
+func TestAStoreOfOnlyImportedTypesIsClean(t *testing.T) {
+	s := openStore(t,
+		WithOntology("test", []string{"Node"}, []string{"backs"}),
+		WithImportedVocabulary([]string{"file"}, []string{"imports"}))
+	upsert(t, s,
+		cortexdb.ToolEntityInput{Name: "a.go", Type: "file"},
+		cortexdb.ToolEntityInput{Name: "b.go", Type: "file"})
+	relate(t, s, "a.go", "b.go", "imports")
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if !d.Clean() {
+		t.Errorf("not clean: undeclared nodes %v, edges %v", d.UndeclaredNodeTypes, d.UndeclaredEdgeTypes)
+	}
+	if d.ImportedNodeTypes["file"] != 2 || d.ImportedEdgeTypes["imports"] != 1 {
+		t.Errorf("imported = %v / %v, want file×2, imports×1", d.ImportedNodeTypes, d.ImportedEdgeTypes)
+	}
+}
+
+// The prose vocabulary shouts and the code vocabulary whispers, and the two
+// share words: CONTAINS is "a cluster contains a node", contains is "a file
+// contains a function". The prose match was always case-insensitive and stays
+// so; the imported match is exact, the way the importer's own admission check
+// is, so a `Contains` that neither list spells is still reported as drift.
+func TestImportedVocabularyMatchesExactly(t *testing.T) {
+	undeclared, imported := partitionImported(
+		map[string]int{"imports": 5, "Imports": 1, "layer_contains": 2},
+		[]string{"imports", "layer_contains"})
+	if want := map[string]int{"Imports": 1}; !reflect.DeepEqual(undeclared, want) {
+		t.Errorf("undeclared = %v, want %v", undeclared, want)
+	}
+	if want := map[string]int{"imports": 5, "layer_contains": 2}; !reflect.DeepEqual(imported, want) {
+		t.Errorf("imported = %v, want %v", imported, want)
+	}
+}

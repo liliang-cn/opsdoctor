@@ -542,11 +542,22 @@ type OntologyDrift struct {
 	// has been ingested, which is not drift.
 	StoredFingerprint string `json:"stored_fingerprint,omitempty"`
 
-	// UndeclaredNodeTypes and UndeclaredEdgeTypes were invented by the
-	// extracting model. Undeclared edges are the expensive ones: expansion
-	// filters on the declared vocabulary, so they are stored and never walked.
+	// UndeclaredNodeTypes and UndeclaredEdgeTypes are in no vocabulary at all
+	// — not the prose one, not the imported one — which leaves the extracting
+	// model as the only thing that could have written them. Undeclared edges
+	// are the expensive ones: expansion filters on the declared vocabulary, so
+	// they are stored and never walked.
 	UndeclaredNodeTypes map[string]int `json:"undeclared_node_types,omitempty"`
 	UndeclaredEdgeTypes map[string]int `json:"undeclared_edge_types,omitempty"`
+
+	// ImportedNodeTypes and ImportedEdgeTypes are outside the prose vocabulary
+	// and inside the imported one: the code graph `ingest-repo` and
+	// `import-schema` wrote. Not drift — every one of them was declared,
+	// somewhere other than entity_types — but counted, because on most stores
+	// they are the bulk of the graph and a report that hid them read as if the
+	// graph were nearly empty. See WithImportedVocabulary.
+	ImportedNodeTypes map[string]int `json:"imported_node_types,omitempty"`
+	ImportedEdgeTypes map[string]int `json:"imported_edge_types,omitempty"`
 
 	// UnusedNodeTypes and UnusedEdgeTypes were declared and never extracted.
 	// Harmless, but they are prompt budget spent on nothing, and a type the
@@ -637,6 +648,13 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 
 	d.UndeclaredNodeTypes, d.UnusedNodeTypes = diffVocabulary(s.entityTypes, nodeCounts)
 	d.UndeclaredEdgeTypes, d.UnusedEdgeTypes = diffVocabulary(s.relationTypes, edgeCounts)
+	// The prose vocabulary is asked first and case-insensitively, as it always
+	// was; what it does not claim is then offered to the imported vocabulary.
+	// The order matters where the two share a word: a `contains` under a
+	// declared CONTAINS stays the prose vocabulary's, which is what expansion
+	// treats it as.
+	d.UndeclaredNodeTypes, d.ImportedNodeTypes = partitionImported(d.UndeclaredNodeTypes, s.importedEntityTypes)
+	d.UndeclaredEdgeTypes, d.ImportedEdgeTypes = partitionImported(d.UndeclaredEdgeTypes, s.importedRelationTypes)
 
 	misdirected, err := s.misdirectedEdges(ctx)
 	if err != nil {
@@ -831,6 +849,35 @@ func diffVocabulary(declared []string, found map[string]int) (undeclared map[str
 	}
 	sort.Strings(unused)
 	return undeclared, unused
+}
+
+// partitionImported splits the types the prose vocabulary did not claim into
+// the ones the imported vocabulary declares and the ones nobody did. Exact
+// match, for the reason WithImportedVocabulary gives. Either result is nil
+// when empty, so a caller comparing against "no drift" sees the same shape
+// diffVocabulary produces.
+func partitionImported(undeclared map[string]int, imported []string) (stillUndeclared, importedFound map[string]int) {
+	if len(undeclared) == 0 || len(imported) == 0 {
+		return undeclared, nil
+	}
+	known := make(map[string]struct{}, len(imported))
+	for _, t := range imported {
+		known[t] = struct{}{}
+	}
+	for t, n := range undeclared {
+		if _, ok := known[t]; ok {
+			if importedFound == nil {
+				importedFound = make(map[string]int)
+			}
+			importedFound[t] = n
+			continue
+		}
+		if stillUndeclared == nil {
+			stillUndeclared = make(map[string]int)
+		}
+		stillUndeclared[t] = n
+	}
+	return stillUndeclared, importedFound
 }
 
 // keepDeclaredTypes stops an unspecified mention from demoting a declared type.

@@ -218,6 +218,13 @@ type Store struct {
 	// relationEnds holds the relations whose ends the domain declared, keyed by
 	// lowercased name. Empty for a domain that declares edge names only.
 	relationEnds map[string]RelationEnd
+
+	// importedEntityTypes and importedRelationTypes are what the importers may
+	// write: the domain's code vocabulary plus the structural types the
+	// importers add themselves. Drift reads them so the imported code graph is
+	// not reported as the extracting model's invention. See ontology.go.
+	importedEntityTypes   []string
+	importedRelationTypes []string
 }
 
 // Option customizes a Store at Open time.
@@ -233,6 +240,36 @@ type Option func(*Store)
 // search. Nothing failed and nothing logged; the graph was simply never walked.
 func WithRelationTypes(types []string) Option {
 	return func(s *Store) { s.domainEdgeTypes = caseVariants(types) }
+}
+
+// WithImportedVocabulary tells the store which types arrive by import rather
+// than by extraction.
+//
+// A knowledge base holds two graphs in one namespace. The prose graph is what
+// the LLM extracted under domain.toml's entity_types and relation_types; the
+// code graph is what `ingest-repo` and `import-schema` wrote under the domain's
+// code vocabulary and the importers' own structural types. Drift compared the
+// whole store against the prose list alone, so on a base holding six thousand
+// imported nodes and no extracted ones it reported `function`, `file` and
+// `imports` as types "the extracting model invented" — and the one type nobody
+// declared anywhere was the fourth item on a list of twenty-six.
+//
+// The types here are matched exactly, as the importer's own admission check
+// matches them. The prose vocabulary shouts (CONTAINS) and the code vocabulary
+// whispers (contains); folding case would merge "a cluster contains a node"
+// with "a file contains a function", which share a word and nothing else.
+func WithImportedVocabulary(entityTypes, relationTypes []string) Option {
+	return func(s *Store) {
+		s.importedEntityTypes = trimAll(entityTypes)
+		s.importedRelationTypes = trimAll(relationTypes)
+	}
+}
+
+// ImportedVocabulary returns the types the store was told arrive by import.
+// It exists so the caller assembling the list can check what the store heard.
+func (s *Store) ImportedVocabulary() (entityTypes, relationTypes []string) {
+	return append([]string(nil), s.importedEntityTypes...),
+		append([]string(nil), s.importedRelationTypes...)
 }
 
 // caseVariants returns each type as declared plus its upper- and lower-cased

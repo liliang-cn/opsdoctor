@@ -39,7 +39,7 @@ import (
 	"github.com/liliang-cn/oss-agent/internal/schemaimport"
 )
 
-const version = "oss-agent 0.35.0"
+const version = "oss-agent 0.36.0"
 
 func main() {
 	if len(os.Args) < 2 {
