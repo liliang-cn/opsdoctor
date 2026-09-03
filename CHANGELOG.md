@@ -4,6 +4,19 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.37.0 — 2026-09-02
+
+agent-go v3.23.1. No change in this package; everything builds and every test
+passes against it.
+
+Seven releases since v3.16.0, and one of them reaches here: v3.17.0 fixed a
+provider injected through `WithLLM` leaving the service without a model name,
+which is exactly how this package hands its provider over, so runs were
+priced and traced as an unnamed model. The rest — out-of-process plugins,
+background work an agent starts itself, relative time in memory, images to
+and from the model, swappable memory backends and a cross-session memory
+leak in the file backend (v3.22.1) — is surface this package does not call.
+
 ## v0.36.0 — 2026-09-02
 
 Drift stops blaming the extracting model for the imported code graph.
