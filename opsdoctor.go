@@ -34,7 +34,6 @@ import (
 	"github.com/liliang-cn/opsdoctor/internal/cite"
 	"github.com/liliang-cn/opsdoctor/internal/config"
 	"github.com/liliang-cn/opsdoctor/internal/domain"
-	"github.com/liliang-cn/opsdoctor/internal/extract"
 	"github.com/liliang-cn/opsdoctor/internal/ingest"
 	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 	"github.com/liliang-cn/opsdoctor/internal/loganalyze"
@@ -88,6 +87,14 @@ type Config struct {
 	KnowledgeDBPath string // OPSDOCTOR_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
 	SessionDBPath   string // OPSDOCTOR_DB_PATH (default ./data/opsdoctor.db)
 
+	// alchemy, the extraction service. With an address, Ingest reads prose
+	// through alchemy: every node and edge carries provenance, and a
+	// document whose sources contradict each other is held rather than
+	// written. Without one, the built-in per-chunk LLM extractor reads it.
+	AlchemyAddr  string // OPSDOCTOR_ALCHEMY_ADDR
+	AlchemyToken string // OPSDOCTOR_ALCHEMY_TOKEN
+	AlchemyTLS   bool   // OPSDOCTOR_ALCHEMY_TLS
+
 	// Domain source. Set Domain for an in-memory config, or DomainFile for a path
 	// to a domain.toml (OPSDOCTOR_DOMAIN_FILE if both are empty). Domain wins if set.
 	DomainFile string
@@ -123,7 +130,7 @@ type Agent struct {
 	store   *knowledge.Store
 	dom     *domain.Domain
 	filter  *safety.Filter
-	extract *extract.Extractor // ontology extractor for ingest (nil ⇒ vectors only)
+	extract knowledge.DocumentExtractor // graph extractor for ingest (nil ⇒ vectors only)
 	mcp     []*mcp.Client
 	mcpStat []MCPStatus
 	// embBaseURL is kept for Doctor, whose first check is whether a proxy sits
@@ -164,6 +171,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.SessionDBPath != "" {
 		c.DBPath = cfg.SessionDBPath
 	}
+	if cfg.AlchemyAddr != "" {
+		c.AlchemyAddr, c.AlchemyToken, c.AlchemyTLS = cfg.AlchemyAddr, cfg.AlchemyToken, cfg.AlchemyTLS
+	}
 
 	dom := cfg.Domain
 	if dom == nil {
@@ -187,7 +197,13 @@ func New(cfg Config) (*Agent, error) {
 		return nil, fmt.Errorf("compile red-lines: %w", err)
 	}
 
-	a := &Agent{svc: svc, store: store, dom: dom, filter: filter, extract: agents.BuildExtractor(c, dom),
+	ex, err := agents.BuildExtractor(c, dom)
+	if err != nil {
+		svc.Close()
+		store.Close()
+		return nil, err
+	}
+	a := &Agent{svc: svc, store: store, dom: dom, filter: filter, extract: ex,
 		embBaseURL: c.EmbBaseURL}
 
 	// Mount any external MCP servers. This never fails New: unreachable servers are

@@ -128,6 +128,17 @@ opsdoctor refresh <repo-or-dir>
 
 ---
 
+### 2.x Extract through alchemy (optional)
+
+Point `OPSDOCTOR_ALCHEMY_ADDR` (and `_TOKEN`) at an alchemy service and every
+`ingest` / `ingest-repo` / `refresh` reads prose through it: one job per
+document, the domain's vocabulary translated into alchemy's ontology, and the
+result written with provenance on every node and edge. A document alchemy holds
+for review is logged with the job id and the conflict's subject, keeps its
+vectors, and gets its graph on the next `refresh` after the review is answered.
+The LLM alchemy extracts with is the one in `OPSDOCTOR_LLM_*`; no embedder is
+sent, the store embeds its own chunks. `opsdoctor doctor` has an `alchemy` line.
+
 ## 3. Run locally
 
 ```bash
@@ -251,6 +262,8 @@ make push-db HOST=<host>    # ship a freshly rebuilt knowledge.db
 | `OPSDOCTOR_CONV_MEMORY` | `on` | cross-session chat memory |
 | `OPSDOCTOR_RATE_LIMIT_PER_MIN` | `30` | per-IP LLM-endpoint cap (0 = off) |
 | `OPSDOCTOR_UNDERSTAND_CMD` | — | command to produce knowledge-graph.json |
+| `OPSDOCTOR_ALCHEMY_ADDR` | — | alchemy gRPC address; prose extraction goes through alchemy when set |
+| `OPSDOCTOR_ALCHEMY_TOKEN` / `_TLS` | — / off | its bearer token; TLS on request |
 
 ---
 

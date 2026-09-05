@@ -18,3 +18,15 @@ func TestGetenvFallsBackToTheOldPrefix(t *testing.T) {
 		t.Errorf("Getenv(UNRELATED) = %q, want empty — the fallback is only for this program's prefix", got)
 	}
 }
+
+func TestAlchemyIsOffUntilAnAddressIsGiven(t *testing.T) {
+	if got := Load(); got.AlchemyAddr != "" || got.AlchemyTLS {
+		t.Errorf("alchemy configured from nothing: %+v", got)
+	}
+	t.Setenv("OPSDOCTOR_ALCHEMY_ADDR", "127.0.0.1:43711")
+	t.Setenv("OPSDOCTOR_ALCHEMY_TLS", "Yes")
+	got := Load()
+	if got.AlchemyAddr != "127.0.0.1:43711" || !got.AlchemyTLS {
+		t.Errorf("alchemy = %q tls=%v", got.AlchemyAddr, got.AlchemyTLS)
+	}
+}

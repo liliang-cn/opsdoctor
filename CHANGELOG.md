@@ -4,6 +4,57 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.39.0 — 2026-09-05
+
+Prose can be extracted through alchemy.
+
+Set `OPSDOCTOR_ALCHEMY_ADDR` (and `_TOKEN`, `_TLS`) and every `ingest`,
+`ingest-repo` and `refresh` reads prose through alchemy instead of the
+built-in per-chunk LLM extractor. One document is one job of its chunks: each
+chunk the store embedded goes up as its own source, named by the chunk's id
+and read whole, so alchemy's chunk and the store's chunk are the same span
+and a citation resolves to a row that exists. The job is checked against the
+domain's vocabulary translated into alchemy's ontology — id
+`<domain>@<fingerprint>`, ends from `[[relation]]` — and alchemy's own loader
+is what the translation is tested against.
+
+What the graph gains: every node and edge carries `alchemy_job`, producer,
+model and ontology version, and `alchemy_stated` says whether a model
+inferred the fact or a source stated it; edges are flagged inferred. A type
+outside the vocabulary, an undecided duplicate and an unread chunk are logged
+per document. A document whose sources contradict each other is held: vectors
+stored, graph withheld, the job and the conflict named on the log and counted
+(`IngestHeld`). A wrong token or an unreachable service says which it is, and
+`doctor` has an `alchemy` line that pings with the same token ingest will use.
+An unchanged document re-ingested under an unchanged vocabulary is a replay on
+the server (idempotency key over ontology id, document id and chunks), not a
+second bill — measured: 15 s the first time, 0.4 s the second.
+
+Not used: alchemy's CortexDB connector. It namespaces every node by the run
+that produced it, which is right for a graph loaded once and wrong for a base
+ingested a document at a time, where the gateway named in forty documents must
+be one node. The store's own writer keeps that identity; alchemy's provenance
+rides along as metadata. Verified on a two-document corpus: `pool-fast` and
+`nfs-export0` are one node each with both documents as sources.
+
+The seam this opened is `knowledge.DocumentExtractor`: the per-chunk LLM path
+now sits behind it too (`PerChunk`), the store no longer knows which is
+reading, and a held or failed extraction is one line per document either way.
+
+Also: a re-ingest whose extraction fails or is held now keeps the document's
+previous graph. The old order purged the graph first and extracted second, so
+an alchemy that was unreachable turned a refresh into a wipe — measured on
+the same corpus: eighteen nodes, then zero, with "ingested" on stdout. The
+graph is replaced only by a new one.
+
+Also: drift no longer counts cortexdb's own `chunk` nodes and `mentions`
+edges, which every chunk-linked write produces and no vocabulary will ever
+declare — every store with citations read as drifted.
+
+alchemy is a private module today; `go build` of this repository needs access
+to it. The dependency is the core module only (proto, wire, ontology), not
+the connectors.
+
 ## v0.38.0 — 2026-09-05
 
 Renamed: oss-agent is now **opsdoctor**.

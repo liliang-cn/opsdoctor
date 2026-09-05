@@ -651,6 +651,16 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 		return nil, err
 	}
 
+	// cortexdb's own bookkeeping types are nobody's vocabulary: a `chunk`
+	// node per cited chunk and a `mentions` edge from it to the entity, both
+	// written by the store on every chunk-linked upsert. Counting them
+	// reported every store with citations as drifted.
+	for _, t := range cortexdbOwnNodeTypes {
+		delete(nodeCounts, t)
+	}
+	for _, t := range cortexdbOwnEdgeTypes {
+		delete(edgeCounts, t)
+	}
 	d.UndeclaredNodeTypes, d.UnusedNodeTypes = diffVocabulary(s.entityTypes, nodeCounts)
 	d.UndeclaredEdgeTypes, d.UnusedEdgeTypes = diffVocabulary(s.relationTypes, edgeCounts)
 	// The prose vocabulary is asked first and case-insensitively, as it always
@@ -855,6 +865,13 @@ func diffVocabulary(declared []string, found map[string]int) (undeclared map[str
 	sort.Strings(unused)
 	return undeclared, unused
 }
+
+// The types cortexdb writes on its own behalf. It exports no constants for
+// them; these are the spellings in its GraphRAG ingest path.
+var (
+	cortexdbOwnNodeTypes = []string{"chunk"}
+	cortexdbOwnEdgeTypes = []string{"mentions"}
+)
 
 // partitionImported splits the types the prose vocabulary did not claim into
 // the ones the imported vocabulary declares and the ones nobody did. Exact

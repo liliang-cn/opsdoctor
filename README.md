@@ -96,6 +96,8 @@ OPSDOCTOR_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
 OPSDOCTOR_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
 OPSDOCTOR_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
 OPSDOCTOR_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+OPSDOCTOR_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy (see below)
+OPSDOCTOR_ALCHEMY_TOKEN   its bearer token   OPSDOCTOR_ALCHEMY_TLS=1 to use TLS
 ```
 
 The embedder used to query must match the one used to build the store (e.g. ollama
@@ -106,6 +108,29 @@ The embedder used to query must match the one used to build the store (e.g. olla
 1. Write a `domain.toml` (see `examples/example/domain.toml`): persona,
    entity/relation types, `error_patterns`, `probes`, `repos`, `red_lines`.
 2. Point `OPSDOCTOR_DOMAIN_FILE` at it.
+
+### Extraction through alchemy
+
+By default prose is read into the graph by a built-in extractor: one LLM call
+per chunk under the domain's vocabulary. With `OPSDOCTOR_ALCHEMY_ADDR` set, it
+is read by [alchemy](https://github.com/liliang-cn/alchemy) instead. Each
+document becomes one alchemy job of its chunks, checked against the
+vocabulary translated from `domain.toml`, and what comes back carries what the
+built-in extractor cannot say:
+
+- every node and edge records the job, producer, model and ontology version it
+  came from (`alchemy_*` metadata), and whether a model *inferred* it or a
+  source *stated* it;
+- a type the vocabulary does not declare, two names alchemy could not decide
+  were one thing, and a chunk it could not read are reported per document
+  rather than swallowed;
+- a document whose sources contradict each other is **held**: its vectors are
+  stored, its graph is not written, and the log names the job and the conflict
+  to rule on.
+
+Entities keep the store's identity — the same gateway named in forty documents
+is one node — and `refresh`, `resolve`, `doctor` and citations work as before.
+`opsdoctor doctor` reports whether alchemy is reachable with the token given.
 3. Ingest the project's repos (`ingest-repo`) and docs (`ingest-repo` text path).
 4. `ask` / `analyze-log` away. No engine code changes.
 

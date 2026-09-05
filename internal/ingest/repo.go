@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/liliang-cn/opsdoctor/internal/domain"
-	"github.com/liliang-cn/opsdoctor/internal/extract"
 	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
@@ -62,7 +61,7 @@ const maxFileBytes = 512 * 1024 // skip very large files
 
 // Repo ingests a local repository directory into the store, using the domain's
 // error-string patterns for code and (when ex != nil) the LLM ontology extractor.
-func Repo(ctx context.Context, store *knowledge.Store, root, repoName string, dom *domain.Domain, ex *extract.Extractor) (Stats, error) {
+func Repo(ctx context.Context, store *knowledge.Store, root, repoName string, dom *domain.Domain, ex knowledge.DocumentExtractor) (Stats, error) {
 	var st Stats
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

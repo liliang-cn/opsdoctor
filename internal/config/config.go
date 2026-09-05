@@ -28,6 +28,12 @@ type Config struct {
 
 	// Path to the active domain config (domain.toml). Each project supplies its own.
 	DomainFile string
+
+	// alchemy, the extraction service. Empty AlchemyAddr means prose is read
+	// by the built-in per-chunk LLM extractor instead. See internal/alchemyclient.
+	AlchemyAddr  string
+	AlchemyToken string
+	AlchemyTLS   bool
 }
 
 // Load reads config from environment variables with sensible defaults.
@@ -35,6 +41,7 @@ type Config struct {
 //	OPSDOCTOR_LLM_BASE_URL / OPSDOCTOR_LLM_API_KEY / OPSDOCTOR_LLM_MODEL
 //	OPSDOCTOR_EMB_BASE_URL / OPSDOCTOR_EMB_API_KEY / OPSDOCTOR_EMB_MODEL
 //	OPSDOCTOR_DB_PATH
+//	OPSDOCTOR_ALCHEMY_ADDR / OPSDOCTOR_ALCHEMY_TOKEN / OPSDOCTOR_ALCHEMY_TLS
 func Load() Config {
 	llmBase := env("OPSDOCTOR_LLM_BASE_URL", "https://api.openai.com/v1")
 	llmKey := Getenv("OPSDOCTOR_LLM_API_KEY")
@@ -49,6 +56,9 @@ func Load() Config {
 		KnowledgeDBPath: env("OPSDOCTOR_KNOWLEDGE_DB_PATH", "./data/knowledge.db"),
 		EmbDim:          envInt("OPSDOCTOR_EMB_DIM", 1536),
 		DomainFile:      env("OPSDOCTOR_DOMAIN_FILE", "./domain.toml"),
+		AlchemyAddr:     Getenv("OPSDOCTOR_ALCHEMY_ADDR"),
+		AlchemyToken:    Getenv("OPSDOCTOR_ALCHEMY_TOKEN"),
+		AlchemyTLS:      envBool("OPSDOCTOR_ALCHEMY_TLS"),
 	}
 }
 
@@ -69,6 +79,16 @@ func Getenv(key string) string {
 		return os.Getenv(legacyPrefix + strings.TrimPrefix(key, "OPSDOCTOR_"))
 	}
 	return ""
+}
+
+// envBool is true for 1/true/yes/on, case-insensitively, and false for
+// anything else including unset.
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func envInt(key string, def int) int {

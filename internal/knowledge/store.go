@@ -182,6 +182,7 @@ const extractConcurrency = 10
 var (
 	extractFailures atomic.Int64
 	upsertFailures  atomic.Int64
+	heldDocuments   atomic.Int64
 	extractLogged   atomic.Bool
 	upsertLogged    atomic.Bool
 )
@@ -1089,37 +1090,167 @@ func chunk(text string, size int) []string {
 	return out
 }
 
+// Chunk is one span of a document as the store embeds it: the id it is stored
+// under and the text. An extractor cites a chunk by this id, so the citation
+// resolves to a row the store actually holds.
+type Chunk struct {
+	ID   string
+	Text string
+}
+
+// DocumentGraph is what an extractor says about one document, in the shape
+// the store writes: entities and relations ready to upsert, carrying whatever
+// provenance the extractor has (chunk ids, metadata, an inferred flag).
+//
+// Held is non-empty when the extractor produced a graph it refuses to stand
+// behind — alchemy holds a job whose sources contradict each other until a
+// person rules. A held graph is not written, because writing the undisputed
+// half would store the disputed edge as a fact, which is what holding exists
+// to prevent. The document keeps its vectors; the reason is logged and
+// counted.
+//
+// Notes are what the extractor wants said about the document — findings that
+// are not failures: a type the ontology does not declare, two names it could
+// not decide were one thing, a chunk it could not read.
+type DocumentGraph struct {
+	Entities  []cortexdb.ToolEntityInput
+	Relations []cortexdb.ToolRelationInput
+	Held      string
+	Notes     []string
+}
+
+// DocumentExtractor turns one document's chunks into a graph.
+//
+// It is the seam between the store and whatever reads prose for it. The
+// per-chunk LLM extractor and alchemy both sit behind it; the store does not
+// know which, and does not need to — it embeds, it purges, it writes what it
+// is handed, and it says so when it cannot.
+type DocumentExtractor interface {
+	ExtractDocument(ctx context.Context, docID string, chunks []Chunk) (*DocumentGraph, error)
+}
+
 // IngestSemantic chunks content, stores each chunk as a SEMANTIC vector (via the
-// configured embedder), and — when ex != nil — extracts an ontology fragment per
-// chunk (entities + relations) into the knowledge graph. Requires an embedder.
-func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string, ex *extract.Extractor) error {
-	chunks := chunk(content, 1200)
-	if len(chunks) == 0 {
+// configured embedder), and — when ex != nil — asks the extractor for the
+// document's graph and writes it. Requires an embedder.
+func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string, ex DocumentExtractor) error {
+	pieces := chunk(content, 1200)
+	if len(pieces) == 0 {
 		return nil
 	}
 	// 1. embed + store vectors in one batched call (the embedder sub-batches
 	//    to a provider-safe size internally).
-	texts := make(map[string]string, len(chunks))
-	for i, ch := range chunks {
-		texts[fmt.Sprintf("%s#%d", docID, i)] = ch
+	chunks := make([]Chunk, 0, len(pieces))
+	texts := make(map[string]string, len(pieces))
+	for i, ch := range pieces {
+		id := fmt.Sprintf("%s#%d", docID, i)
+		chunks = append(chunks, Chunk{ID: id, Text: ch})
+		texts[id] = ch
 	}
 	if err := s.db.InsertTextBatch(ctx, texts, map[string]string{"document_id": docID, "title": title}); err != nil {
 		return fmt.Errorf("embed chunks: %w", err)
 	}
 
-	// Only now that the new chunks are safely stored: an embedder that is down
-	// is the common failure — it happened twice while re-ingesting the SDS
-	// corpus, once mid-run with a 503 — and it must leave the document as it
-	// was rather than strip its graph on the way to failing.
+	// The document's old graph is replaced only by a new one. An embedder
+	// that is down is the common failure — it happened twice while
+	// re-ingesting the SDS corpus, once mid-run with a 503 — and an extractor
+	// that is down is the same failure one step later; either must leave the
+	// document as it was rather than strip its graph on the way to failing.
+	// A re-ingest through an unreachable alchemy did exactly that: two
+	// documents, eighteen nodes, zero afterwards, and "ingested" on stdout.
+	if ex == nil {
+		return s.replaceDocumentGraph(ctx, docID)
+	}
+	return s.extractAndWrite(ctx, docID, chunks, ex)
+}
+
+// extractAndWrite asks the extractor and writes its answer. Best-effort, but
+// NOT silent: discarding the error made a live deployment's graph stop growing
+// entirely while ingest kept reporting success — every chunk was embedded,
+// every entity was refused, and nothing anywhere said so. One line per
+// document is enough to notice; the caller still gets its vectors.
+func (s *Store) extractAndWrite(ctx context.Context, docID string, chunks []Chunk, ex DocumentExtractor) error {
+	dg, err := ex.ExtractDocument(ctx, docID, chunks)
+	if err != nil {
+		extractFailures.Add(1)
+		logOnce(&extractLogged, "[opsdoctor] knowledge: ontology extraction failed for %s, storing vectors only and keeping its previous graph: %v", docID, err)
+		return nil
+	}
+	if dg == nil {
+		return nil
+	}
+	return s.writeDocumentGraph(ctx, docID, dg)
+}
+
+// writeDocumentGraph upserts the extracted graph (serialized — single SQLite
+// writer). A held graph is not written; see DocumentGraph.Held.
+func (s *Store) writeDocumentGraph(ctx context.Context, docID string, dg *DocumentGraph) error {
+	for _, note := range dg.Notes {
+		log.Printf("[opsdoctor] knowledge: %s: %s", docID, note)
+	}
+	if dg.Held != "" {
+		heldDocuments.Add(1)
+		log.Printf("[opsdoctor] knowledge: %s: graph withheld — %s. Vectors are stored and any previous graph kept; the new graph is written once the review is answered and the source re-ingested.", docID, dg.Held)
+		return nil
+	}
 	if err := s.replaceDocumentGraph(ctx, docID); err != nil {
 		return err
 	}
+	var ents []cortexdb.ToolEntityInput
+	for _, e := range dg.Entities {
+		if e.Name != "" {
+			ents = append(ents, e)
+		}
+	}
+	if len(ents) > 0 {
+		s.keepDeclaredTypes(ctx, ents)
+		// An ACTIVE cortexdb ontology schema validates every upsert, and one
+		// registered with a primary key the extractor does not emit refused
+		// every entity in the graph. The write failing is not a reason to
+		// fail ingest; it is a reason to say something.
+		if _, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: ents}); err != nil {
+			upsertFailures.Add(1)
+			logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
+		} else {
+			// The graph now holds entities extracted under the vocabulary
+			// currently loaded — which is the only place that fact can be
+			// recorded, and what makes "this graph was built under a
+			// different domain.toml" answerable later. See DriftReport.
+			s.noteExtractionVocabulary(ctx)
+		}
+	}
+	var rels []cortexdb.ToolRelationInput
+	for _, r := range dg.Relations {
+		if r.From != "" && r.To != "" {
+			rels = append(rels, r)
+		}
+	}
+	if len(rels) > 0 {
+		if _, err := s.tb.UpsertRelations(ctx, cortexdb.ToolUpsertRelationsRequest{DocumentID: docID, Relations: rels}); err != nil {
+			upsertFailures.Add(1)
+			logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
+		}
+	}
+	return nil
+}
+
+// IngestHeld reports how many documents an extractor has held back from the
+// graph since the process started. See DocumentGraph.Held.
+func IngestHeld() int64 { return heldDocuments.Load() }
+
+// PerChunk adapts the per-chunk LLM extractor to the document seam: one model
+// call per chunk, run concurrently (the gateway permits ~N parallel requests,
+// and one call per chunk is otherwise the bottleneck), each fragment citing
+// the chunk it came from. A nil extractor is a nil seam.
+func PerChunk(ex *extract.Extractor) DocumentExtractor {
 	if ex == nil {
 		return nil
 	}
+	return perChunk{ex}
+}
 
-	// 2. LLM ontology extraction — run concurrently (the gateway permits ~N
-	//    parallel requests), since one call per chunk is otherwise the bottleneck.
+type perChunk struct{ ex *extract.Extractor }
+
+func (p perChunk) ExtractDocument(ctx context.Context, docID string, chunks []Chunk) (*DocumentGraph, error) {
 	type frag struct {
 		chunkID string
 		tr      *extract.Triples
@@ -1128,73 +1259,53 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	frags := make([]frag, 0, len(chunks))
-	for i, ch := range chunks {
-		chunkID := fmt.Sprintf("%s#%d", docID, i)
+	var firstErr error
+	failed := 0
+	for _, c := range chunks {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(id, text string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			tr, err := ex.Extract(ctx, text)
-			if err != nil || tr == nil {
-				// Best-effort, but NOT silent. Discarding this made a live
-				// deployment's graph stop growing entirely while ingest kept
-				// reporting success: every chunk was embedded, every entity was
-				// refused, and nothing anywhere said so. One line per document
-				// is enough to notice; the caller still gets its vectors.
-				if err != nil {
-					extractFailures.Add(1)
-					logOnce(&extractLogged, "[opsdoctor] knowledge: ontology extraction failed for %s, storing vectors only: %v", id, err)
+			tr, err := p.ex.Extract(ctx, text)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed++
+				if firstErr == nil {
+					firstErr = err
 				}
 				return
 			}
-			mu.Lock()
-			frags = append(frags, frag{id, tr})
-			mu.Unlock()
-		}(chunkID, ch)
+			if tr != nil {
+				frags = append(frags, frag{id, tr})
+			}
+		}(c.ID, c.Text)
 	}
 	wg.Wait()
-
-	// 3. upsert the extracted ontology (serialized — single SQLite writer).
+	// Every chunk failing is the extractor failing; some failing is a note.
+	// The distinction matters to whoever reads the log: the first is "the
+	// model is down", the second is "one chunk was odd".
+	if failed == len(chunks) && firstErr != nil {
+		return nil, firstErr
+	}
+	dg := &DocumentGraph{}
+	if failed > 0 {
+		dg.Notes = append(dg.Notes, fmt.Sprintf("%d of %d chunks failed extraction, first: %v", failed, len(chunks), firstErr))
+	}
 	for _, f := range frags {
-		var ents []cortexdb.ToolEntityInput
 		for _, e := range f.tr.Entities {
 			if e.Name != "" {
-				ents = append(ents, cortexdb.ToolEntityInput{Name: e.Name, Type: e.Type, Description: e.Description, ChunkIDs: []string{f.chunkID}})
+				dg.Entities = append(dg.Entities, cortexdb.ToolEntityInput{Name: e.Name, Type: e.Type, Description: e.Description, ChunkIDs: []string{f.chunkID}})
 			}
 		}
-		if len(ents) > 0 {
-			s.keepDeclaredTypes(ctx, ents)
-			// Same rule as the extraction above, and the same incident: an
-			// ACTIVE cortexdb ontology schema validates every upsert, and one
-			// registered with a primary key the extractor does not emit refused
-			// every entity in the graph. The write failing is not a reason to
-			// fail ingest; it is a reason to say something.
-			if _, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: ents}); err != nil {
-				upsertFailures.Add(1)
-				logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
-			} else {
-				// The graph now holds entities extracted under the vocabulary
-				// currently loaded — which is the only place that fact can be
-				// recorded, and what makes "this graph was built under a
-				// different domain.toml" answerable later. See DriftReport.
-				s.noteExtractionVocabulary(ctx)
-			}
-		}
-		var rels []cortexdb.ToolRelationInput
 		for _, r := range f.tr.Relations {
 			if r.From != "" && r.To != "" {
-				rels = append(rels, cortexdb.ToolRelationInput{From: r.From, To: r.To, Type: r.Type, ChunkIDs: []string{f.chunkID}})
-			}
-		}
-		if len(rels) > 0 {
-			if _, err := s.tb.UpsertRelations(ctx, cortexdb.ToolUpsertRelationsRequest{DocumentID: docID, Relations: rels}); err != nil {
-				upsertFailures.Add(1)
-				logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
+				dg.Relations = append(dg.Relations, cortexdb.ToolRelationInput{From: r.From, To: r.To, Type: r.Type, ChunkIDs: []string{f.chunkID}})
 			}
 		}
 	}
-	return nil
+	return dg, nil
 }
 
 // SearchSemantic runs hybrid (vector + keyword) retrieval. With an embedder it is

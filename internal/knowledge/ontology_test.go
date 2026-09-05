@@ -962,3 +962,24 @@ func TestImportedVocabularyMatchesExactly(t *testing.T) {
 		t.Errorf("imported = %v, want %v", imported, want)
 	}
 }
+
+// cortexdb writes two types of its own on every chunk-linked write: a
+// `chunk` node per cited chunk and a `mentions` edge from it to the entity.
+// They come from the store, not from any extractor or importer, and no
+// vocabulary will ever declare them — so a report that counted them said
+// every store with citations had drifted, which is every store that works.
+func TestDriftIgnoresCortexdbsOwnChunkAndMentionTypes(t *testing.T) {
+	s := openStore(t, WithOntology("test", []string{"Node"}, []string{"backs"}))
+	upsert(t, s, cortexdb.ToolEntityInput{Name: "node-a", Type: "Node", ChunkIDs: []string{"doc#0"}})
+
+	d, err := s.DriftReport(context.Background())
+	if err != nil {
+		t.Fatalf("drift: %v", err)
+	}
+	if !d.Clean() {
+		t.Errorf("not clean: nodes %v, edges %v", d.UndeclaredNodeTypes, d.UndeclaredEdgeTypes)
+	}
+	if _, ok := d.ImportedNodeTypes["chunk"]; ok {
+		t.Error("chunk was reported as an imported type; it is the store's own")
+	}
+}

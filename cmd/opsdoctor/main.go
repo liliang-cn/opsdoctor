@@ -39,7 +39,7 @@ import (
 	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
-const version = "opsdoctor 0.38.0"
+const version = "opsdoctor 0.39.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -134,7 +134,7 @@ func runIngest(dir string) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	ex := agents.BuildExtractor(cfg, loadDomain(cfg))
+	ex := buildExtractor(cfg, loadDomain(cfg))
 
 	if strings.TrimSpace(dir) == "" {
 		fail("usage: opsdoctor ingest <dir-with-*.md>   (for a code repo use: ingest-repo <url>)")
@@ -207,6 +207,12 @@ func runDoctor() {
 	fmt.Printf("knowledge: %s\nembedder:  %s (%s, dim %d)\n\n",
 		cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbModel, cfg.EmbDim)
 	d := store.Doctor(context.Background(), cfg.EmbBaseURL)
+	if cfg.AlchemyAddr != "" {
+		d.Checks = append(d.Checks, checkAlchemy(cfg))
+		if d.Checks[len(d.Checks)-1].Status == knowledge.CheckFail {
+			d.Failed = true
+		}
+	}
 	fmt.Print(d.Format())
 	if env := knowledge.ProxyEnvSummary(); env != "" {
 		fmt.Printf("\nproxy environment:\n%s\n", env)
@@ -214,6 +220,28 @@ func runDoctor() {
 	if d.Failed {
 		os.Exit(1)
 	}
+}
+
+// checkAlchemy reports whether the extraction service ingest will use can be
+// reached with the token it was given. Both failures otherwise arrive as one
+// "extraction failed" line per document, forty documents later.
+func checkAlchemy(cfg config.Config) knowledge.Check {
+	const name = "alchemy"
+	ex, err := agents.AlchemyExtractor(cfg, loadDomain(cfg))
+	if err != nil {
+		return knowledge.Check{Name: name, Status: knowledge.CheckFail, Detail: err.Error(),
+			Hint: "prose will not be extracted until this is fixed; ingest refuses to start."}
+	}
+	defer ex.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ex.Ping(ctx); err != nil {
+		return knowledge.Check{Name: name, Status: knowledge.CheckFail, Detail: err.Error(),
+			Hint: "every ingest will store vectors and log one extraction failure per document. " +
+				"Check OPSDOCTOR_ALCHEMY_ADDR / OPSDOCTOR_ALCHEMY_TOKEN and that the service is up."}
+	}
+	return knowledge.Check{Name: name, Status: knowledge.CheckOK,
+		Detail: fmt.Sprintf("%s reachable, token accepted; extracting under ontology %s", cfg.AlchemyAddr, ex.OntologyID)}
 }
 
 // runResolve merges entities that are one concept spelled several ways.
@@ -415,7 +443,7 @@ func runIngestRepo(arg string) {
 	// 3b. fallback: text + code error-string ingest
 	fmt.Println("[3/3] no knowledge-graph.json — falling back to text/code ingest")
 	dom := loadDomain(cfg)
-	ex := agents.BuildExtractor(cfg, dom)
+	ex := buildExtractor(cfg, dom)
 	st, err := ingest.Repo(ctx, store, dir, name, dom, ex)
 	if err != nil {
 		fail("ingest repo: %v", err)
@@ -485,7 +513,7 @@ func runRefresh(arg string) {
 	}
 	fmt.Printf("[purge] %s/* — removed %d chunks\n", name, embN)
 	dom := loadDomain(cfg)
-	ex := agents.BuildExtractor(cfg, dom)
+	ex := buildExtractor(cfg, dom)
 	st, e := ingest.Repo(ctx, store, dir, name, dom, ex)
 	if e != nil {
 		fail("ingest repo: %v", e)
@@ -935,6 +963,9 @@ env:
   OPSDOCTOR_EMB_*         embedder for GraphRAG memory (defaults to LLM creds)
   OPSDOCTOR_DB_PATH       graph-memory db (default ./data/opsdoctor.db)
   OPSDOCTOR_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+  OPSDOCTOR_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy
+                            (provenance on every node and edge, conflicts held for review)
+  OPSDOCTOR_ALCHEMY_TOKEN   its bearer token   OPSDOCTOR_ALCHEMY_TLS=1 to use TLS
                       (e.g. claude -p "/understand ." --dangerously-skip-permissions)
 `)
 }
@@ -974,6 +1005,16 @@ func loadDomain(cfg config.Config) *domain.Domain {
 // legitimate thing to do. A missing or broken domain.toml costs the store its
 // vocabulary, not the command its life. See agents.StoreOptions for what the
 // vocabulary buys.
+// buildExtractor is BuildExtractor for a command: a misconfigured extractor
+// stops the command rather than ingesting vectors with no graph behind them.
+func buildExtractor(cfg config.Config, dom *domain.Domain) knowledge.DocumentExtractor {
+	ex, err := agents.BuildExtractor(cfg, dom)
+	if err != nil {
+		fail("%v", err)
+	}
+	return ex
+}
+
 func openKnowledge(cfg config.Config) (*knowledge.Store, error) {
 	var opts []knowledge.Option
 	if d, err := domain.Load(cfg.DomainFile); err == nil {

@@ -17,6 +17,7 @@ import (
 	agdomain "github.com/liliang-cn/agent-go/v3/pkg/domain"
 	"github.com/liliang-cn/agent-go/v3/pkg/providers"
 
+	"github.com/liliang-cn/opsdoctor/internal/alchemyclient"
 	"github.com/liliang-cn/opsdoctor/internal/cite"
 	"github.com/liliang-cn/opsdoctor/internal/config"
 	"github.com/liliang-cn/opsdoctor/internal/domain"
@@ -82,11 +83,21 @@ func importedRelationTypes(dom *domain.Domain) []string {
 	return append(out, schemaimport.ReferencesType)
 }
 
-// BuildExtractor returns an LLM ontology extractor for the domain, or nil if no
-// LLM key is configured (ingestion then stores vectors without graph extraction).
-func BuildExtractor(cfg config.Config, dom *domain.Domain) *extract.Extractor {
+// BuildExtractor returns what reads prose into the graph for this domain:
+// alchemy when an address is configured, otherwise the built-in per-chunk
+// LLM extractor, otherwise nil (ingestion then stores vectors without graph
+// extraction).
+//
+// A configured alchemy that cannot be set up is an error, not a fallback.
+// Falling back to the per-chunk extractor would produce a graph with no
+// provenance and no review from a deployment that asked for both, and the
+// only sign would be metadata quietly missing from every new node.
+func BuildExtractor(cfg config.Config, dom *domain.Domain) (knowledge.DocumentExtractor, error) {
+	if cfg.AlchemyAddr != "" {
+		return AlchemyExtractor(cfg, dom)
+	}
 	if cfg.LLMAPIKey == "" {
-		return nil
+		return nil, nil
 	}
 	llm, err := providers.NewOpenAILLMProvider(&agdomain.OpenAIProviderConfig{
 		BaseURL:  cfg.LLMBaseURL,
@@ -94,9 +105,22 @@ func BuildExtractor(cfg config.Config, dom *domain.Domain) *extract.Extractor {
 		LLMModel: cfg.LLMModel,
 	})
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("build LLM extractor: %w", err)
 	}
-	return extract.New(llm, dom)
+	return knowledge.PerChunk(extract.New(llm, dom)), nil
+}
+
+// AlchemyExtractor is the alchemy-backed extractor for this configuration,
+// exposed so the doctor can ping the same service ingest will use.
+func AlchemyExtractor(cfg config.Config, dom *domain.Domain) (*alchemyclient.Extractor, error) {
+	ex, err := alchemyclient.Dial(alchemyclient.Config{
+		Addr: cfg.AlchemyAddr, Token: cfg.AlchemyToken, TLS: cfg.AlchemyTLS,
+		LLM: alchemyclient.Endpoint{Model: cfg.LLMModel, BaseURL: cfg.LLMBaseURL, APIKey: cfg.LLMAPIKey},
+	}, dom)
+	if err != nil {
+		return nil, fmt.Errorf("alchemy (OPSDOCTOR_ALCHEMY_ADDR=%s): %w", cfg.AlchemyAddr, err)
+	}
+	return ex, nil
 }
 
 // Build constructs the configured agent service and its knowledge store for the
