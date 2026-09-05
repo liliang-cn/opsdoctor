@@ -1,4 +1,4 @@
-# oss-agent
+# opsdoctor
 
 A **product-agnostic platform** for building AI ops & support agents over an
 open-source project. The engine knows nothing about any specific product — a
@@ -44,24 +44,24 @@ repos/docs ───┘                         └── red-line safety wall (
 ## Commands
 
 ```
-oss-agent ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
-oss-agent diagnose <symptom>   same loop, framed for troubleshooting
-oss-agent chat                 multi-turn (history kept across turns)
-oss-agent serve                start the HTTP API (OSS_HTTP_ADDR, default :7634)
-oss-agent analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
-oss-agent ingest <dir>         ingest *.md docs
-oss-agent ingest-repo <url>    clone → understand → import (graph), or text fallback
-oss-agent refresh <url|dir>    purge one source (catches deletions) and re-import it
-oss-agent import-graph <f>     import an Understand-Anything knowledge-graph.json
-oss-agent search <query>       query the knowledge base directly (no LLM)
-oss-agent search-graph <query> search + one-hop graph expansion (calls/contains/…)
-oss-agent check <command...>   test a command against the red-line wall
-oss-agent domain               print the loaded domain config
+opsdoctor ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
+opsdoctor diagnose <symptom>   same loop, framed for troubleshooting
+opsdoctor chat                 multi-turn (history kept across turns)
+opsdoctor serve                start the HTTP API (OPSDOCTOR_HTTP_ADDR, default :7634)
+opsdoctor analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
+opsdoctor ingest <dir>         ingest *.md docs
+opsdoctor ingest-repo <url>    clone → understand → import (graph), or text fallback
+opsdoctor refresh <url|dir>    purge one source (catches deletions) and re-import it
+opsdoctor import-graph <f>     import an Understand-Anything knowledge-graph.json
+opsdoctor search <query>       query the knowledge base directly (no LLM)
+opsdoctor search-graph <query> search + one-hop graph expansion (calls/contains/…)
+opsdoctor check <command...>   test a command against the red-line wall
+opsdoctor domain               print the loaded domain config
 ```
 
-## HTTP API (`oss-agent serve`)
+## HTTP API (`opsdoctor serve`)
 
-A thin JSON layer over the same agent + knowledge store. Address via `OSS_HTTP_ADDR`
+A thin JSON layer over the same agent + knowledge store. Address via `OPSDOCTOR_HTTP_ADDR`
 (default `:7634`). Without an LLM key it serves the search endpoints only.
 
 ```
@@ -76,7 +76,7 @@ POST /analyze-log    multipart 'log' file OR {path}   → triage groups; ?diagno
 ```
 
 Multi-turn history is keyed by `session_id` and persisted by agent-go's session
-store (at `OSS_DB_PATH`), so conversations survive across requests and restarts.
+store (at `OPSDOCTOR_DB_PATH`), so conversations survive across requests and restarts.
 
 Two memory layers on `/chat`:
 - **within-session** — agent-go session history (same `session_id`).
@@ -84,18 +84,18 @@ Two memory layers on `/chat`:
   (global `conversations` bucket); each new question semantically recalls relevant
   turns from *any* past conversation and prepends them as optional context. The
   response's `recalled` field reports how many were pulled. Toggle with
-  `OSS_CONV_MEMORY=off`.
+  `OPSDOCTOR_CONV_MEMORY=off`.
 
 ## Configuration (env)
 
 ```
-OSS_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
-OSS_LLM_API_KEY     LLM key (OpenAI-compatible)   OSS_LLM_BASE_URL / OSS_LLM_MODEL
-OSS_EMB_API_KEY     embedder key                  OSS_EMB_BASE_URL / OSS_EMB_MODEL / OSS_EMB_DIM
-OSS_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
-OSS_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
-OSS_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
-OSS_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+OPSDOCTOR_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
+OPSDOCTOR_LLM_API_KEY     LLM key (OpenAI-compatible)   OPSDOCTOR_LLM_BASE_URL / OPSDOCTOR_LLM_MODEL
+OPSDOCTOR_EMB_API_KEY     embedder key                  OPSDOCTOR_EMB_BASE_URL / OPSDOCTOR_EMB_MODEL / OPSDOCTOR_EMB_DIM
+OPSDOCTOR_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
+OPSDOCTOR_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
+OPSDOCTOR_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
+OPSDOCTOR_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
 ```
 
 The embedder used to query must match the one used to build the store (e.g. ollama
@@ -105,30 +105,30 @@ The embedder used to query must match the one used to build the store (e.g. olla
 
 1. Write a `domain.toml` (see `examples/example/domain.toml`): persona,
    entity/relation types, `error_patterns`, `probes`, `repos`, `red_lines`.
-2. Point `OSS_DOMAIN_FILE` at it.
+2. Point `OPSDOCTOR_DOMAIN_FILE` at it.
 3. Ingest the project's repos (`ingest-repo`) and docs (`ingest-repo` text path).
 4. `ask` / `analyze-log` away. No engine code changes.
 
 ## Use as a library
 
 The CLI and HTTP server are one app built on the public package
-`github.com/liliang-cn/oss-agent` — embed the same engine in your own program:
+`github.com/liliang-cn/opsdoctor` — embed the same engine in your own program:
 
 ```go
-import ossagent "github.com/liliang-cn/oss-agent"
+import opsdoctor "github.com/liliang-cn/opsdoctor"
 
-// Zero-value fields fall back to OSS_* env vars, then defaults.
-a, err := ossagent.New(ossagent.Config{DomainFile: "domain.toml"})
+// Zero-value fields fall back to OPSDOCTOR_* env vars, then defaults.
+a, err := opsdoctor.New(opsdoctor.Config{DomainFile: "domain.toml"})
 if err != nil { log.Fatal(err) }
 defer a.Close()
 
 answer, _ := a.Ask(ctx, "How do I recover a StandAlone resource?")
 
 // Stream tool calls + the grounded, cited answer:
-a.Stream(ctx, question, func(e ossagent.Event) {
+a.Stream(ctx, question, func(e opsdoctor.Event) {
     switch e.Kind {
-    case ossagent.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
-    case ossagent.EventText:     fmt.Print(e.Text)
+    case opsdoctor.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
+    case opsdoctor.EventText:     fmt.Print(e.Text)
     }
 })
 ```
@@ -150,5 +150,5 @@ Updates re-embed with the Agent's embedder, so it **must** match the target DB's
 model/dimension (e.g. the extracted `drbd-reactor.db` is `text-embedding-v4` / 1024-dim)
 — mismatched vectors corrupt retrieval.
 
-Config is env-first, so a process configured via `OSS_*` can call
-`ossagent.New(ossagent.Config{})`. A runnable example lives in `examples/lib/`.
+Config is env-first, so a process configured via `OPSDOCTOR_*` can call
+`opsdoctor.New(opsdoctor.Config{})`. A runnable example lives in `examples/lib/`.

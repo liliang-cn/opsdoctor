@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-// /api/* is proxied to the oss-agent HTTP API (set VITE_API_TARGET to override).
+// /api/* is proxied to the opsdoctor HTTP API (set VITE_API_TARGET to override).
 export default defineConfig(function (_a) {
     var mode = _a.mode;
     var env = loadEnv(mode, process.cwd(), "");

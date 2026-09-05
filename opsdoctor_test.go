@@ -1,4 +1,4 @@
-package ossagent
+package opsdoctor
 
 import (
 	"encoding/json"

@@ -1,9 +1,9 @@
-// Command lib-example shows how to embed oss-agent as a library.
+// Command lib-example shows how to embed opsdoctor as a library.
 //
-// It imports only the public facade (github.com/liliang-cn/oss-agent) — never an
+// It imports only the public facade (github.com/liliang-cn/opsdoctor) — never an
 // internal package — so it mirrors how an external project would use it.
 //
-//	OSS_LLM_API_KEY=... OSS_DOMAIN_FILE=domain.toml OSS_KNOWLEDGE_DB_PATH=knowledge.db \
+//	OPSDOCTOR_LLM_API_KEY=... OPSDOCTOR_DOMAIN_FILE=domain.toml OPSDOCTOR_KNOWLEDGE_DB_PATH=knowledge.db \
 //	  go run ./examples/lib "how do I recover a degraded resource?"
 package main
 
@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	ossagent "github.com/liliang-cn/oss-agent"
+	opsdoctor "github.com/liliang-cn/opsdoctor"
 )
 
 func main() {
@@ -22,8 +22,8 @@ func main() {
 		question = "How do I safely recover a resource stuck in a degraded state?"
 	}
 
-	// Zero-value fields fall back to OSS_* env vars, then defaults.
-	a, err := ossagent.New(ossagent.Config{})
+	// Zero-value fields fall back to OPSDOCTOR_* env vars, then defaults.
+	a, err := opsdoctor.New(opsdoctor.Config{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "init:", err)
 		os.Exit(1)
@@ -48,15 +48,15 @@ func main() {
 
 	// 3) Stream a grounded answer, printing tool calls live.
 	fmt.Println("--- answer ---")
-	_, sources, err := a.Stream(context.Background(), "", question, func(e ossagent.Event) {
+	_, sources, err := a.Stream(context.Background(), "", question, func(e opsdoctor.Event) {
 		switch e.Kind {
-		case ossagent.EventToolCall:
+		case opsdoctor.EventToolCall:
 			fmt.Printf("\n[tool %s %v]\n", e.Tool, e.Args)
-		case ossagent.EventReset:
+		case opsdoctor.EventReset:
 			fmt.Print("\n\n(replacing preamble with final answer)\n\n")
-		case ossagent.EventText:
+		case opsdoctor.EventText:
 			fmt.Print(e.Text)
-		case ossagent.EventError:
+		case opsdoctor.EventError:
 			fmt.Fprintln(os.Stderr, "\n[error]", e.Text)
 		}
 	})

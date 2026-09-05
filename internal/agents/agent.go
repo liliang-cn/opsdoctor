@@ -17,15 +17,15 @@ import (
 	agdomain "github.com/liliang-cn/agent-go/v3/pkg/domain"
 	"github.com/liliang-cn/agent-go/v3/pkg/providers"
 
-	"github.com/liliang-cn/oss-agent/internal/cite"
-	"github.com/liliang-cn/oss-agent/internal/config"
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/extract"
-	"github.com/liliang-cn/oss-agent/internal/graphimport"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
-	"github.com/liliang-cn/oss-agent/internal/probes"
-	"github.com/liliang-cn/oss-agent/internal/safety"
-	"github.com/liliang-cn/oss-agent/internal/schemaimport"
+	"github.com/liliang-cn/opsdoctor/internal/cite"
+	"github.com/liliang-cn/opsdoctor/internal/config"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/extract"
+	"github.com/liliang-cn/opsdoctor/internal/graphimport"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/probes"
+	"github.com/liliang-cn/opsdoctor/internal/safety"
+	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
 // LLM builds a bare LLM generator from config (used by scaffolding/extraction
@@ -136,7 +136,7 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 	// feature outright, so plain function-calling is now the only mode: still
 	// iterative ReAct tool use, still a single clean text answer in FinalResult,
 	// which is the shape an ask/diagnose agent wants.
-	svc, err := agent.New("oss-agent").
+	svc, err := agent.New("opsdoctor").
 		WithSystemPrompt(dom.Persona + groundingDirective + citationDirective).
 		WithLLM(llm).
 		WithEmbedder(emb).

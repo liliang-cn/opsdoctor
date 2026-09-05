@@ -1,6 +1,6 @@
 # Onboarding a new project → a deployed agent
 
-oss-agent is product-agnostic: the engine never changes. Bringing a new OSS
+opsdoctor is product-agnostic: the engine never changes. Bringing a new OSS
 project online is a repeatable pipeline whose only product-specific input is a
 `domain.toml`. This is the standardized process.
 
@@ -24,15 +24,15 @@ The engine has no compiled-in product knowledge. A worked example
   - (any OpenAI-compatible endpoint works; the query embedder MUST match the one
     used to build the index.)
 - For code-graph ingestion: the [Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)
-  `/understand` skill reachable via `OSS_UNDERSTAND_CMD` (e.g. `claude -p "/understand ." --dangerously-skip-permissions`).
+  `/understand` skill reachable via `OPSDOCTOR_UNDERSTAND_CMD` (e.g. `claude -p "/understand ." --dangerously-skip-permissions`).
 
 Environment used throughout (export once):
 
 ```bash
-export OSS_DOMAIN_FILE=examples/example/domain.toml
-export OSS_LLM_API_KEY=<key>   OSS_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OSS_LLM_MODEL=qwen3.7-plus
-export OSS_EMB_API_KEY=<key>   OSS_EMB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OSS_EMB_MODEL=text-embedding-v4  OSS_EMB_DIM=1024
-export OSS_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissions'
+export OPSDOCTOR_DOMAIN_FILE=examples/example/domain.toml
+export OPSDOCTOR_LLM_API_KEY=<key>   OPSDOCTOR_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OPSDOCTOR_LLM_MODEL=qwen3.7-plus
+export OPSDOCTOR_EMB_API_KEY=<key>   OPSDOCTOR_EMB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OPSDOCTOR_EMB_MODEL=text-embedding-v4  OPSDOCTOR_EMB_DIM=1024
+export OPSDOCTOR_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissions'
 ```
 
 ---
@@ -42,7 +42,7 @@ export OSS_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissi
 **Fast start — let the LLM draft it:**
 
 ```bash
-oss-agent init https://github.com/<org>/<repo>   # clone + LLM → domain.generated.toml
+opsdoctor init https://github.com/<org>/<repo>   # clone + LLM → domain.generated.toml
 ```
 
 `init` inspects the repo (README, top-level layout, dominant languages) and drafts
@@ -63,7 +63,7 @@ the draft** — especially `[[red_lines]]` (the destructive-command safety wall)
 | `repos` | upstream repos to ingest |
 | `[[red_lines]]` | destructive-command blocks (the deterministic safety wall) |
 
-`oss-agent domain` prints the loaded config to verify the TOML.
+`opsdoctor domain` prints the loaded config to verify the TOML.
 
 ---
 
@@ -75,7 +75,7 @@ object model) and **semantic vectors** (for retrieval).
 **a) Code repos → graph** (one command per repo, fully automatic):
 
 ```bash
-oss-agent ingest-repo https://github.com/<org>/<repo>      # clone → /understand → import-graph
+opsdoctor ingest-repo https://github.com/<org>/<repo>      # clone → /understand → import-graph
 ```
 
 If `/understand` stalls on a huge repo (no final `knowledge-graph.json`),
@@ -84,20 +84,20 @@ If `/understand` stalls on a huge repo (no final `knowledge-graph.json`),
 imports that. To redo it explicitly on an existing clone:
 
 ```bash
-oss-agent salvage repos/<repo>     # rebuild + import from intermediate batches, no re-run
+opsdoctor salvage repos/<repo>     # rebuild + import from intermediate batches, no re-run
 ```
 
 **b) Docs / KB / blog → semantic vectors** (point at a dir of .md/.adoc):
 
 ```bash
-oss-agent ingest-repo repos/<docs-dir>     # no knowledge-graph.json → text/semantic ingest
+opsdoctor ingest-repo repos/<docs-dir>     # no knowledge-graph.json → text/semantic ingest
 ```
 
 **c) Object model → graph** (deterministic, no LLM). Use whatever structured
 source the project ships — this is the precise ontology, don't mine it from prose:
 
 ```bash
-oss-agent import-model path/to/source     # auto-detects format → entities + REFERENCES
+opsdoctor import-model path/to/source     # auto-detects format → entities + REFERENCES
 ```
 
 > Adapters (pick the one matching the project's source-of-truth):
@@ -115,15 +115,15 @@ oss-agent import-model path/to/source     # auto-detects format → entities + R
 **d) Verify:**
 
 ```bash
-oss-agent search "<concept>"          # vector + keyword
-oss-agent search-graph "<concept>"    # + one-hop graph expansion
-oss-agent ask "<question>"            # full agent (probes + knowledge_search + red-line wall)
+opsdoctor search "<concept>"          # vector + keyword
+opsdoctor search-graph "<concept>"    # + one-hop graph expansion
+opsdoctor ask "<question>"            # full agent (probes + knowledge_search + red-line wall)
 ```
 
 **Updating a source later** (catches deletions, no full rebuild):
 
 ```bash
-oss-agent refresh <repo-or-dir>
+opsdoctor refresh <repo-or-dir>
 ```
 
 ---
@@ -131,8 +131,8 @@ oss-agent refresh <repo-or-dir>
 ## 3. Run locally
 
 ```bash
-make run            # = go build + ./oss-agent serve   (API under /api/*, UI at /)
-# or:  oss-agent ui   (also opens the browser)
+make run            # = go build + ./opsdoctor serve   (API under /api/*, UI at /)
+# or:  opsdoctor ui   (also opens the browser)
 ```
 
 Open `http://localhost:7634`. Without an LLM key it serves search-only.
@@ -147,35 +147,35 @@ deps** (no ollama). First-time provisioning is below; updates are `make deploy`.
 ### 4.1 First-time provision (on the server, once)
 
 ```bash
-ssh HOST 'mkdir -p /opt/oss-agent/data'
-scp domain.toml HOST:/opt/oss-agent/domain.toml
-scp data/knowledge.db HOST:/opt/oss-agent/data/knowledge.db   # ship the prebuilt index
+ssh HOST 'mkdir -p /opt/opsdoctor/data'
+scp domain.toml HOST:/opt/opsdoctor/domain.toml
+scp data/knowledge.db HOST:/opt/opsdoctor/data/knowledge.db   # ship the prebuilt index
 
 # env (root-only)
-ssh HOST 'cat > /opt/oss-agent/oss-agent.env <<ENV
-OSS_DOMAIN_FILE=/opt/oss-agent/domain.toml
-OSS_KNOWLEDGE_DB_PATH=/opt/oss-agent/data/knowledge.db
-OSS_DB_PATH=/opt/oss-agent/data/oss-agent.db
-OSS_HTTP_ADDR=127.0.0.1:47634
-OSS_LLM_API_KEY=...      OSS_LLM_BASE_URL=...  OSS_LLM_MODEL=qwen3.7-plus
-OSS_EMB_API_KEY=...      OSS_EMB_BASE_URL=...  OSS_EMB_MODEL=text-embedding-v4  OSS_EMB_DIM=1024
-OSS_RATE_LIMIT_PER_MIN=30
+ssh HOST 'cat > /opt/opsdoctor/opsdoctor.env <<ENV
+OPSDOCTOR_DOMAIN_FILE=/opt/opsdoctor/domain.toml
+OPSDOCTOR_KNOWLEDGE_DB_PATH=/opt/opsdoctor/data/knowledge.db
+OPSDOCTOR_DB_PATH=/opt/opsdoctor/data/opsdoctor.db
+OPSDOCTOR_HTTP_ADDR=127.0.0.1:47634
+OPSDOCTOR_LLM_API_KEY=...      OPSDOCTOR_LLM_BASE_URL=...  OPSDOCTOR_LLM_MODEL=qwen3.7-plus
+OPSDOCTOR_EMB_API_KEY=...      OPSDOCTOR_EMB_BASE_URL=...  OPSDOCTOR_EMB_MODEL=text-embedding-v4  OPSDOCTOR_EMB_DIM=1024
+OPSDOCTOR_RATE_LIMIT_PER_MIN=30
 ENV
-chmod 600 /opt/oss-agent/oss-agent.env'
+chmod 600 /opt/opsdoctor/opsdoctor.env'
 ```
 
-systemd unit `/etc/systemd/system/oss-agent.service`:
+systemd unit `/etc/systemd/system/opsdoctor.service`:
 
 ```ini
 [Unit]
-Description=oss-agent
+Description=opsdoctor
 After=network-online.target
 Wants=network-online.target
 [Service]
 Type=simple
-WorkingDirectory=/opt/oss-agent
-EnvironmentFile=/opt/oss-agent/oss-agent.env
-ExecStart=/opt/oss-agent/oss-agent serve
+WorkingDirectory=/opt/opsdoctor
+EnvironmentFile=/opt/opsdoctor/opsdoctor.env
+ExecStart=/opt/opsdoctor/opsdoctor serve
 Restart=on-failure
 RestartSec=3
 [Install]
@@ -183,8 +183,17 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-ssh HOST 'systemctl daemon-reload && systemctl enable --now oss-agent'
+ssh HOST 'systemctl daemon-reload && systemctl enable --now opsdoctor'
 ```
+
+### 4.1a A host provisioned as oss-agent
+
+The program was called oss-agent until v0.38.0. A host set up under that name
+keeps working as it is: the binary reads every `OPSDOCTOR_*` variable and falls
+back to the `OSS_*` name, so the old env file needs no edit. Only the deploy
+target moved — `make deploy` now ships to `/opt/opsdoctor` and restarts the
+`opsdoctor` unit. Either re-provision under the new name (above), or keep the
+old layout with `make deploy REMOTE_DIR=/opt/oss-agent BIN=oss-agent`.
 
 ### 4.2 Caddy: TLS + basic auth + reverse proxy
 
@@ -217,7 +226,7 @@ Point DNS `oss.example.com A → <server ip>`; Caddy auto-provisions the cert.
 
 Built into the app: per-IP sliding-window cap on the LLM endpoints
 (`/ask`, `/ask/stream`, `/diagnose`, `/chat`, `/chat/stream`, `/analyze-log`),
-returns 429 when exceeded. Configure with `OSS_RATE_LIMIT_PER_MIN` (default 30,
+returns 429 when exceeded. Configure with `OPSDOCTOR_RATE_LIMIT_PER_MIN` (default 30,
 `0` = unlimited). Read-only/static endpoints are not limited.
 
 ### 4.4 Updates
@@ -233,15 +242,15 @@ make push-db HOST=<host>    # ship a freshly rebuilt knowledge.db
 
 | var | default | purpose |
 |---|---|---|
-| `OSS_DOMAIN_FILE` | `./domain.toml` | active product config |
-| `OSS_LLM_API_KEY` / `_BASE_URL` / `_MODEL` | — / OpenAI / `gpt-4o` | reasoning LLM |
-| `OSS_EMB_API_KEY` / `_BASE_URL` / `_MODEL` / `_DIM` | (LLM creds) / `text-embedding-3-small` / 1536 | embedder (must match the index) |
-| `OSS_KNOWLEDGE_DB_PATH` | `./data/knowledge.db` | cortexdb knowledge base |
-| `OSS_DB_PATH` | `./data/oss-agent.db` | agent-go session store |
-| `OSS_HTTP_ADDR` | `:7634` | serve listen address |
-| `OSS_CONV_MEMORY` | `on` | cross-session chat memory |
-| `OSS_RATE_LIMIT_PER_MIN` | `30` | per-IP LLM-endpoint cap (0 = off) |
-| `OSS_UNDERSTAND_CMD` | — | command to produce knowledge-graph.json |
+| `OPSDOCTOR_DOMAIN_FILE` | `./domain.toml` | active product config |
+| `OPSDOCTOR_LLM_API_KEY` / `_BASE_URL` / `_MODEL` | — / OpenAI / `gpt-4o` | reasoning LLM |
+| `OPSDOCTOR_EMB_API_KEY` / `_BASE_URL` / `_MODEL` / `_DIM` | (LLM creds) / `text-embedding-3-small` / 1536 | embedder (must match the index) |
+| `OPSDOCTOR_KNOWLEDGE_DB_PATH` | `./data/knowledge.db` | cortexdb knowledge base |
+| `OPSDOCTOR_DB_PATH` | `./data/opsdoctor.db` | agent-go session store |
+| `OPSDOCTOR_HTTP_ADDR` | `:7634` | serve listen address |
+| `OPSDOCTOR_CONV_MEMORY` | `on` | cross-session chat memory |
+| `OPSDOCTOR_RATE_LIMIT_PER_MIN` | `30` | per-IP LLM-endpoint cap (0 = off) |
+| `OPSDOCTOR_UNDERSTAND_CMD` | — | command to produce knowledge-graph.json |
 
 ---
 
@@ -252,7 +261,7 @@ make push-db HOST=<host>    # ship a freshly rebuilt knowledge.db
   (domain.toml-driven), deploy (`make deploy`).
 - **Finite adapters, pick one**: object-model extraction from a structured source
   (`import-model`: SQL / proto / OpenAPI / C-struct).
-- **LLM-assisted, human-reviewed**: drafting `domain.toml` (`oss-agent init`).
+- **LLM-assisted, human-reviewed**: drafting `domain.toml` (`opsdoctor init`).
 - **Irreducible human input**: reviewing/owning the `domain.toml` — above all the
   `red_lines` safety wall — and choosing which structured source is the object
   model. Everything else is the pipeline above.

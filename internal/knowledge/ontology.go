@@ -35,6 +35,11 @@ import (
 // ontologySchemaID is the stable id the domain's schema is stored under. One
 // knowledge base holds one domain, so this does not need to vary; re-registering
 // replaces it and cortexdb carries the version.
+//
+// It still spells the program's old name on purpose. This is a storage key,
+// not a label: every knowledge base built before the rename holds its schema
+// under it, and a new id would register a second schema beside the first
+// rather than replace it. The name a person sees is the schema's Name field.
 const ontologySchemaID = "oss-agent-domain"
 
 // WithOntology registers the domain's declared vocabulary as a cortexdb
@@ -226,7 +231,7 @@ func (s *Store) noteExtractionVocabulary(ctx context.Context) {
 	if _, err := s.db.SaveOntologySchema(ctx, cortexdb.OntologySaveRequest{
 		Activate: true, Schema: *stored,
 	}); err != nil {
-		log.Printf("[ossagent] knowledge: recording the extraction vocabulary failed: %v", err)
+		log.Printf("[opsdoctor] knowledge: recording the extraction vocabulary failed: %v", err)
 	}
 }
 
@@ -363,7 +368,7 @@ func (s *Store) registerOntology(ctx context.Context) error {
 
 	name := s.ontologyName
 	if name == "" {
-		name = "oss-agent domain"
+		name = "opsdoctor domain"
 	}
 	// Activated as a VOCABULARY schema, never a strict one. A strict active
 	// schema is enforced on every entity upsert, and that enforcement demands
@@ -497,7 +502,7 @@ func (s *Store) seedsByName(ctx context.Context, query string, limit int) []stri
 			Limit:     limit,
 		})
 		if err != nil {
-			log.Printf("[ossagent] knowledge: name seeding failed: %v", err)
+			log.Printf("[opsdoctor] knowledge: name seeding failed: %v", err)
 			return
 		}
 		for _, m := range res.Matches {
@@ -662,7 +667,7 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 	}
 	d.MisdirectedEdges = misdirected
 	if nodes, err := s.misdirectedNodes(ctx); err != nil {
-		log.Printf("[ossagent] knowledge: finding the nodes behind misdirected edges failed: %v", err)
+		log.Printf("[opsdoctor] knowledge: finding the nodes behind misdirected edges failed: %v", err)
 	} else {
 		d.MisdirectedNodes = nodes
 	}
@@ -927,7 +932,7 @@ func (s *Store) keepDeclaredTypes(ctx context.Context, ents []cortexdb.ToolEntit
 	}
 	nodes, err := s.db.Graph().GetNodesBatch(ctx, ids)
 	if err != nil {
-		log.Printf("[ossagent] knowledge: checking declared types failed, an unspecified mention may demote one: %v", err)
+		log.Printf("[opsdoctor] knowledge: checking declared types failed, an unspecified mention may demote one: %v", err)
 		return
 	}
 	for _, n := range nodes {

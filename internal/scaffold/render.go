@@ -10,7 +10,7 @@ import (
 // the operator audits the safety wall before trusting it.
 func render(d *draft, repoName string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# domain.toml drafted by `oss-agent init` for %q.\n", repoName)
+	fmt.Fprintf(&b, "# domain.toml drafted by `opsdoctor init` for %q.\n", repoName)
 	b.WriteString("# REVIEW everything below — especially [[red_lines]] (the destructive-command\n")
 	b.WriteString("# safety wall) and [[probes]] (commands the agent may run). These were proposed\n")
 	b.WriteString("# by an LLM from the repo and MUST be verified against the product's real CLI.\n\n")

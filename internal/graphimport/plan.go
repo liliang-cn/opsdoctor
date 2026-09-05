@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
 // ImportPlan is everything a graph JSON would write, computed before anything is
@@ -167,7 +167,7 @@ func Plan(path, repo string, vocab domain.CodeVocabulary) (*ImportPlan, error) {
 		})
 	}
 
-	// 2. layers and 3. tour steps are oss-agent's own scaffolding rather than
+	// 2. layers and 3. tour steps are opsdoctor's own scaffolding rather than
 	// upstream code types, so the code vocabulary does not gate them — but they
 	// share the id space and must be namespaced with everything else.
 	for _, l := range g.Layers {

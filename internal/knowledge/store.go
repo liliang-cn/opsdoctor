@@ -23,7 +23,7 @@ import (
 	"github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
 	"github.com/liliang-cn/cortexdb/v2/pkg/graph"
 
-	"github.com/liliang-cn/oss-agent/internal/extract"
+	"github.com/liliang-cn/opsdoctor/internal/extract"
 )
 
 // searchReranker is the second-stage reranker applied to the over-fetched
@@ -503,7 +503,7 @@ func (s *Store) SearchGraph(ctx context.Context, query string, topK int) (*Graph
 		// It is still worth a line, because the only symptom of a graph that is
 		// never walked is an answer that is merely a little thinner than it
 		// should be — which nobody notices.
-		log.Printf("[ossagent] knowledge: graph expansion failed, answering from vector hits only: %v", err)
+		log.Printf("[opsdoctor] knowledge: graph expansion failed, answering from vector hits only: %v", err)
 		return res, nil
 	}
 
@@ -862,7 +862,7 @@ func (s *Store) seedsFromHitText(ctx context.Context, hits []Hit, seen map[strin
 	if err != nil {
 		// Best-effort, like the expansion it feeds: a query that cannot seed by
 		// label still answers from its vector hits.
-		log.Printf("[ossagent] knowledge: label seeding failed: %v", err)
+		log.Printf("[opsdoctor] knowledge: label seeding failed: %v", err)
 		return nil
 	}
 
@@ -1144,7 +1144,7 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 				// is enough to notice; the caller still gets its vectors.
 				if err != nil {
 					extractFailures.Add(1)
-					logOnce(&extractLogged, "[ossagent] knowledge: ontology extraction failed for %s, storing vectors only: %v", id, err)
+					logOnce(&extractLogged, "[opsdoctor] knowledge: ontology extraction failed for %s, storing vectors only: %v", id, err)
 				}
 				return
 			}
@@ -1172,7 +1172,7 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 			// fail ingest; it is a reason to say something.
 			if _, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: ents}); err != nil {
 				upsertFailures.Add(1)
-				logOnce(&upsertLogged, "[ossagent] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
+				logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
 			} else {
 				// The graph now holds entities extracted under the vocabulary
 				// currently loaded — which is the only place that fact can be
@@ -1190,7 +1190,7 @@ func (s *Store) IngestSemantic(ctx context.Context, docID, title, content string
 		if len(rels) > 0 {
 			if _, err := s.tb.UpsertRelations(ctx, cortexdb.ToolUpsertRelationsRequest{DocumentID: docID, Relations: rels}); err != nil {
 				upsertFailures.Add(1)
-				logOnce(&upsertLogged, "[ossagent] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
+				logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
 			}
 		}
 	}

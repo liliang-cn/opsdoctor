@@ -1,4 +1,4 @@
-// Package ossagent is the library API for building a product-agnostic AI ops &
+// Package opsdoctor is the library API for building a product-agnostic AI ops &
 // support agent over an open-source project's code, docs, and runbooks.
 //
 // The engine knows nothing about any specific product: a "domain" (persona,
@@ -9,37 +9,36 @@
 //
 // Minimal use:
 //
-//	a, err := ossagent.New(ossagent.Config{DomainFile: "domain.toml"})
+//	a, err := opsdoctor.New(opsdoctor.Config{DomainFile: "domain.toml"})
 //	if err != nil { log.Fatal(err) }
 //	defer a.Close()
 //	answer, err := a.Ask(ctx, "How do I recover a resource stuck in a degraded state?")
 //
-// Any Config field left zero falls back to the matching OSS_* environment variable
+// Any Config field left zero falls back to the matching OPSDOCTOR_* environment variable
 // and then a built-in default, so a process configured purely through the
-// environment can call ossagent.New(ossagent.Config{}).
-package ossagent
+// environment can call opsdoctor.New(opsdoctor.Config{}).
+package opsdoctor
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/liliang-cn/agent-go/v3/pkg/agent"
 	"github.com/liliang-cn/agent-go/v3/pkg/mcp"
 
-	"github.com/liliang-cn/oss-agent/internal/agents"
-	"github.com/liliang-cn/oss-agent/internal/cite"
-	"github.com/liliang-cn/oss-agent/internal/config"
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/extract"
-	"github.com/liliang-cn/oss-agent/internal/ingest"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
-	"github.com/liliang-cn/oss-agent/internal/loganalyze"
-	"github.com/liliang-cn/oss-agent/internal/safety"
+	"github.com/liliang-cn/opsdoctor/internal/agents"
+	"github.com/liliang-cn/opsdoctor/internal/cite"
+	"github.com/liliang-cn/opsdoctor/internal/config"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/extract"
+	"github.com/liliang-cn/opsdoctor/internal/ingest"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/loganalyze"
+	"github.com/liliang-cn/opsdoctor/internal/safety"
 )
 
 // Re-exported types so callers never import internal packages.
@@ -74,28 +73,28 @@ type (
 	LogReport = loganalyze.Report
 )
 
-// Config configures an Agent. Every zero-valued field falls back to its OSS_*
+// Config configures an Agent. Every zero-valued field falls back to its OPSDOCTOR_*
 // environment variable and then a default (see the package docs).
 type Config struct {
-	LLMBaseURL string // OSS_LLM_BASE_URL (default https://api.openai.com/v1)
-	LLMAPIKey  string // OSS_LLM_API_KEY (required for Ask/Diagnose/Chat/Stream)
-	LLMModel   string // OSS_LLM_MODEL (default gpt-4o)
+	LLMBaseURL string // OPSDOCTOR_LLM_BASE_URL (default https://api.openai.com/v1)
+	LLMAPIKey  string // OPSDOCTOR_LLM_API_KEY (required for Ask/Diagnose/Chat/Stream)
+	LLMModel   string // OPSDOCTOR_LLM_MODEL (default gpt-4o)
 
-	EmbBaseURL string // OSS_EMB_BASE_URL (defaults to LLMBaseURL)
-	EmbAPIKey  string // OSS_EMB_API_KEY (defaults to LLMAPIKey)
-	EmbModel   string // OSS_EMB_MODEL (default text-embedding-3-small)
-	EmbDim     int    // OSS_EMB_DIM (default 1536) — must match the index
+	EmbBaseURL string // OPSDOCTOR_EMB_BASE_URL (defaults to LLMBaseURL)
+	EmbAPIKey  string // OPSDOCTOR_EMB_API_KEY (defaults to LLMAPIKey)
+	EmbModel   string // OPSDOCTOR_EMB_MODEL (default text-embedding-3-small)
+	EmbDim     int    // OPSDOCTOR_EMB_DIM (default 1536) — must match the index
 
-	KnowledgeDBPath string // OSS_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
-	SessionDBPath   string // OSS_DB_PATH (default ./data/oss-agent.db)
+	KnowledgeDBPath string // OPSDOCTOR_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
+	SessionDBPath   string // OPSDOCTOR_DB_PATH (default ./data/opsdoctor.db)
 
 	// Domain source. Set Domain for an in-memory config, or DomainFile for a path
-	// to a domain.toml (OSS_DOMAIN_FILE if both are empty). Domain wins if set.
+	// to a domain.toml (OPSDOCTOR_DOMAIN_FILE if both are empty). Domain wins if set.
 	DomainFile string
 	Domain     *Domain
 
 	// MCPServers are external MCP servers whose tools are mounted into the ReAct
-	// loop. This is a code-only knob (no OSS_* fallback). A server that fails to
+	// loop. This is a code-only knob (no OPSDOCTOR_* fallback). A server that fails to
 	// connect is skipped (the agent degrades to knowledge-only); inspect the
 	// outcome with Agent.MCPStatus. Mark a spec ReadOnly to mount only its
 	// observational tools — the safe default for cluster-control servers.
@@ -247,10 +246,10 @@ func (a *Agent) Diagnose(ctx context.Context, symptom string) (string, error) {
 const maxToolRounds = 8
 
 // debugEnabled turns on verbose per-turn tracing (every tool call with args, every
-// tool result, suggestions, resets and the final answer). Enable with OSS_DEBUG=1
+// tool result, suggestions, resets and the final answer). Enable with OPSDOCTOR_DEBUG=1
 // (or true/yes/on). Off by default so production logs stay quiet.
 func debugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("OSS_DEBUG"))) {
+	switch strings.ToLower(strings.TrimSpace(config.Getenv("OPSDOCTOR_DEBUG"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -393,7 +392,7 @@ func (a *Agent) ResolveSpellings(ctx context.Context, dryRun bool) (*SpellingRep
 // work", which is the question that goes wrong silently. Every check exists
 // because the corresponding failure produced no error anywhere — the copilot
 // simply answered worse, and nothing said why. A caller embedding this library
-// has no CLI to run `oss-agent doctor` with, which is the whole reason it is
+// has no CLI to run `opsdoctor doctor` with, which is the whole reason it is
 // here.
 func (a *Agent) Doctor(ctx context.Context) *Diagnosis {
 	return a.store.Doctor(ctx, a.embBaseURL)
@@ -463,7 +462,7 @@ type Event struct {
 func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(Event)) (answer string, sources []string, err error) {
 	dbg := debugEnabled()
 	if dbg {
-		log.Printf("[ossagent] ▶ turn start: session=%q question=%q (maxToolRounds=%d, mcp_servers=%d)", sessionID, truncate(question, 300), maxToolRounds, len(a.mcp))
+		log.Printf("[opsdoctor] ▶ turn start: session=%q question=%q (maxToolRounds=%d, mcp_servers=%d)", sessionID, truncate(question, 300), maxToolRounds, len(a.mcp))
 	}
 	opts := []agent.RunOption{agent.WithMaxTurns(maxToolRounds)}
 	if sessionID != "" {
@@ -472,7 +471,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 	events, err := a.svc.RunStreamWithOptions(ctx, question, opts...)
 	if err != nil {
 		if dbg {
-			log.Printf("[ossagent] ✗ RunStream error: %v", err)
+			log.Printf("[opsdoctor] ✗ RunStream error: %v", err)
 		}
 		return "", nil, err
 	}
@@ -488,26 +487,26 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 				partials++
 				full += ev.Content
 				if dbg {
-					log.Printf("[ossagent]   · text delta (%d chars): %q", len([]rune(ev.Content)), truncate(ev.Content, 120))
+					log.Printf("[opsdoctor]   · text delta (%d chars): %q", len([]rune(ev.Content)), truncate(ev.Content, 120))
 				}
 				on(Event{Kind: EventText, Text: ev.Content})
 			}
 		case agent.EventTypeToolCall:
 			if ev.ToolName == "task_complete" { // internal answer sentinel
 				if dbg {
-					log.Printf("[ossagent]   ✓ task_complete (model signalled done)")
+					log.Printf("[opsdoctor]   ✓ task_complete (model signalled done)")
 				}
 				continue
 			}
 			if ev.ToolName == agents.SuggestActionToolName {
 				if dbg {
-					log.Printf("[ossagent]   ⚑ suggest_action call args=%s", jsonCompact(ev.ToolArgs))
+					log.Printf("[opsdoctor]   ⚑ suggest_action call args=%s", jsonCompact(ev.ToolArgs))
 				}
 				continue // the proposal is surfaced on the tool result as EventSuggestion
 			}
 			toolCalls++
 			if dbg {
-				log.Printf("[ossagent]   → tool call #%d: %s args=%s", toolCalls, ev.ToolName, jsonCompact(ev.ToolArgs))
+				log.Printf("[opsdoctor]   → tool call #%d: %s args=%s", toolCalls, ev.ToolName, jsonCompact(ev.ToolArgs))
 			}
 			on(Event{Kind: EventToolCall, Tool: ev.ToolName, Args: ev.ToolArgs})
 		case agent.EventTypeToolResult:
@@ -518,7 +517,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 				if s := parseSuggestion(ev.ToolResult); s != nil {
 					suggestions++
 					if dbg {
-						log.Printf("[ossagent]   ⚑ suggestion #%d: action=%s params=%s severity=%s blocked=%v reason=%q",
+						log.Printf("[opsdoctor]   ⚑ suggestion #%d: action=%s params=%s severity=%s blocked=%v reason=%q",
 							suggestions, s.Action, jsonCompact(s.Params), s.Severity, s.Verdict.Blocked, truncate(s.Reason, 160))
 					}
 					on(Event{Kind: EventSuggestion, Tool: ev.ToolName, Suggestion: s})
@@ -530,20 +529,20 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 			}
 			toolResults++
 			if dbg {
-				log.Printf("[ossagent]   ← tool result #%d: %s → %s", toolResults, ev.ToolName, truncate(fmt.Sprintf("%v", ev.ToolResult), 240))
+				log.Printf("[opsdoctor]   ← tool result #%d: %s → %s", toolResults, ev.ToolName, truncate(fmt.Sprintf("%v", ev.ToolResult), 240))
 			}
 			on(Event{Kind: EventToolResult, Tool: ev.ToolName})
 		case agent.EventTypeComplete:
 			final = ev.Content
 			if dbg {
-				log.Printf("[ossagent]   ■ complete: answer (%d chars): %q", len([]rune(final)), truncate(final, 200))
+				log.Printf("[opsdoctor]   ■ complete: answer (%d chars): %q", len([]rune(final)), truncate(final, 200))
 			}
 		case agent.EventTypeError:
 			if strings.Contains(ev.Content, "compaction") { // internal, non-fatal
 				continue
 			}
 			if dbg {
-				log.Printf("[ossagent]   ⚠ error event: %s", truncate(ev.Content, 200))
+				log.Printf("[opsdoctor]   ⚠ error event: %s", truncate(ev.Content, 200))
 			}
 			on(Event{Kind: EventError, Text: ev.Content})
 		}
@@ -561,7 +560,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 		on(Event{Kind: EventText, Text: foot})
 	}
 	if dbg {
-		log.Printf("[ossagent] ◀ turn done: tool_calls=%d tool_results=%d suggestions=%d text_deltas=%d sources=%d answer_len=%d",
+		log.Printf("[opsdoctor] ◀ turn done: tool_calls=%d tool_results=%d suggestions=%d text_deltas=%d sources=%d answer_len=%d",
 			toolCalls, toolResults, suggestions, partials, len(sources), len([]rune(full)))
 	}
 	return full, sources, nil

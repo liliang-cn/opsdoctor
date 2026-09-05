@@ -14,9 +14,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/extract"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/extract"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
 // Stats summarizes an ingest run.

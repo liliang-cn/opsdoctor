@@ -45,7 +45,7 @@ func TestSourcePatternsTableIsIgnored(t *testing.T) {
 // appended to the TOML body verbatim.
 func compileForTest(d *Domain, extra string) error {
 	d.Name, d.Persona = "t", "p"
-	tmp := filepath.Join(os.TempDir(), "oss-agent-domain-test.toml")
+	tmp := filepath.Join(os.TempDir(), "opsdoctor-domain-test.toml")
 	body := "name = \"t\"\npersona = \"p\"\n"
 	for _, p := range d.ErrorPatternsRaw {
 		body += "error_patterns = ['" + p + "']\n"

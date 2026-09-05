@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liliang-cn/oss-agent/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
 )
 
 func writeGraph(t *testing.T, body string) string {
@@ -163,7 +163,7 @@ func TestPlanRejectsUndeclaredNodeType(t *testing.T) {
 	}
 }
 
-// Layers and tour steps are oss-agent's own scaffolding, not upstream code
+// Layers and tour steps are opsdoctor's own scaffolding, not upstream code
 // types, so they are exempt from the code vocabulary — but they still have to
 // be namespaced or two repos' layers collide.
 func TestPlanNamespacesLayersAndTour(t *testing.T) {

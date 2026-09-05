@@ -1,4 +1,4 @@
-module github.com/liliang-cn/oss-agent
+module github.com/liliang-cn/opsdoctor
 
 go 1.25.5
 

@@ -13,10 +13,10 @@ import (
 
 	"github.com/liliang-cn/agent-go/v3/pkg/llm"
 
-	"github.com/liliang-cn/oss-agent/internal/agents"
-	"github.com/liliang-cn/oss-agent/internal/cite"
-	"github.com/liliang-cn/oss-agent/internal/config"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/agents"
+	"github.com/liliang-cn/opsdoctor/internal/cite"
+	"github.com/liliang-cn/opsdoctor/internal/config"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
 // evalCase is one row of an eval dataset: a question to ask the agent. Expected
@@ -52,7 +52,7 @@ func runEval(args []string) {
 		dsArg = fs.Arg(0)
 	}
 	if dsArg == "" {
-		fail("usage: oss-agent eval <dataset.json> [-k 4] [-out report.json] [-fail-under 0.8]\n" +
+		fail("usage: opsdoctor eval <dataset.json> [-k 4] [-out report.json] [-fail-under 0.8]\n" +
 			"  dataset: a JSON array of {name, question, category?, meta?} (or {\"cases\":[...]})")
 	}
 

@@ -27,8 +27,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
 // matches Understand-Anything packages/core/src/types.ts

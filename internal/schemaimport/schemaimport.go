@@ -13,7 +13,7 @@ import (
 
 	"github.com/liliang-cn/cortexdb/v2/pkg/importflow"
 
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
 )
 
 // Stats summarizes an import.

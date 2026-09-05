@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
-	"github.com/liliang-cn/oss-agent/internal/schemaimport"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
 // Field is one member of an object (name + the type token used for ref resolution).

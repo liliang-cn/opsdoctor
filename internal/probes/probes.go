@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liliang-cn/oss-agent/internal/safety"
+	"github.com/liliang-cn/opsdoctor/internal/safety"
 )
 
 // Probe is one read-only diagnostic command with a fixed argv. It is loaded from

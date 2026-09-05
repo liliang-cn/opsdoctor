@@ -13,7 +13,7 @@ import (
 
 	agdomain "github.com/liliang-cn/agent-go/v3/pkg/domain"
 
-	"github.com/liliang-cn/oss-agent/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
 )
 
 // Entity is one extracted ontology node.
@@ -78,7 +78,7 @@ func (e *Extractor) warnIfUnconstrained() {
 		if len(missing) == 0 {
 			return
 		}
-		log.Printf("[ossagent] warning: domain %q declares no %s — the extracted graph will use "+
+		log.Printf("[opsdoctor] warning: domain %q declares no %s — the extracted graph will use "+
 			"type names the model invents per chunk, and graph expansion will fall back to the "+
 			"built-in code vocabulary, so most of it will not be traversable. Declare the "+
 			"vocabulary in domain.toml.", e.dom.Name, strings.Join(missing, " or "))
@@ -91,7 +91,7 @@ func (e *Extractor) warnIfUnconstrained() {
 // forbids everything and then lists no exception. Asking for stable, conventional
 // names is the honest version — it cannot make the vocabulary closed, but it at
 // least pushes the model to reuse a name across chunks instead of coining a
-// synonym each time. UPPER_SNAKE for relations matches what `oss-agent init`
+// synonym each time. UPPER_SNAKE for relations matches what `opsdoctor init`
 // generates, so a hand-written domain and a scaffolded one agree.
 const freeVocabularyGuidance = `This domain declares no fixed vocabulary, so choose type names yourself: singular
 CamelCase nouns for entities (StoragePool, ErrorCode) and UPPER_SNAKE verbs for

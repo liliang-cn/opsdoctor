@@ -1,6 +1,6 @@
 # build artifacts
 bin/
-/oss-agent
+/opsdoctor
 
 # runtime data (cortexdb knowledge base + agent memory)
 data/

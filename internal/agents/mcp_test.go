@@ -12,7 +12,7 @@ import (
 	"github.com/liliang-cn/agent-go/v3/pkg/providers"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/liliang-cn/oss-agent/internal/safety"
+	"github.com/liliang-cn/opsdoctor/internal/safety"
 )
 
 func TestReadOnlyAdmit(t *testing.T) {
@@ -248,7 +248,7 @@ func newTestService(t *testing.T) *agent.Service {
 	if err != nil {
 		t.Fatalf("new llm provider: %v", err)
 	}
-	svc, err := agent.New("oss-agent-test").WithLLM(llm).Build()
+	svc, err := agent.New("opsdoctor-test").WithLLM(llm).Build()
 	if err != nil {
 		t.Fatalf("build service: %v", err)
 	}

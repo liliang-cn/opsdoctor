@@ -252,7 +252,7 @@ func (s *Store) checkEmbedder(ctx context.Context) Check {
 			Name: name, Status: CheckFail,
 			Detail: err.Error(),
 			Hint: "every knowledge_search fails this way, and the agent will answer from general " +
-				"knowledge instead of saying so. Check OSS_EMB_BASE_URL/OSS_EMB_API_KEY and the proxy above.",
+				"knowledge instead of saying so. Check OPSDOCTOR_EMB_BASE_URL/OPSDOCTOR_EMB_API_KEY and the proxy above.",
 		}
 	}
 	return Check{Name: name, Status: CheckOK, Detail: fmt.Sprintf("responded in %s", time.Since(start).Round(time.Millisecond))}
@@ -266,7 +266,7 @@ func checkInventory(inv *Inventory, err error) Check {
 	if inv.Chunks == 0 {
 		return Check{
 			Name: name, Status: CheckFail, Detail: "no chunks stored",
-			Hint: "nothing has been ingested — run `oss-agent ingest <dir>` or `ingest-repo <url>`.",
+			Hint: "nothing has been ingested — run `opsdoctor ingest <dir>` or `ingest-repo <url>`.",
 		}
 	}
 	return Check{
@@ -351,7 +351,7 @@ func (s *Store) checkSourceBalance(ctx context.Context, inv *Inventory, invErr e
 		return Check{Name: name, Status: CheckWarn,
 			Detail: detail + fmt.Sprintf(" (%.0fx)", ratio),
 			Hint: "retrieval caps the code share per result set, so this is not fatal, but verify " +
-				"operational questions still return runbooks — `oss-agent eval` reports the mix per question.",
+				"operational questions still return runbooks — `opsdoctor eval` reports the mix per question.",
 		}
 	}
 	return Check{Name: name, Status: CheckOK, Detail: detail}
@@ -378,7 +378,7 @@ func (s *Store) checkOrphanNodes(ctx context.Context) Check {
 		return Check{Name: name, Status: CheckWarn, Detail: detail,
 			Hint: "unreachable nodes are retrieved but never expanded. They accumulate when an " +
 				"ingest's edges are rejected, or when a source is re-ingested without being purged " +
-				"first — `oss-agent refresh <dir>` purges before re-ingesting.",
+				"first — `opsdoctor refresh <dir>` purges before re-ingesting.",
 		}
 	}
 	return Check{Name: name, Status: CheckOK, Detail: detail}
@@ -513,7 +513,7 @@ func (s *Store) checkDuplicateEntities(ctx context.Context) Check {
 	return Check{Name: name, Status: CheckWarn, Detail: detail,
 		Hint: "each spelling is its own node, so a document's edges attach to whichever one it " +
 			"used. Walks pool them, but expansion and the neighbour quota still see two entities. " +
-			"Run `oss-agent resolve --dry-run` to see the merges, then without the flag to make them."}
+			"Run `opsdoctor resolve --dry-run` to see the merges, then without the flag to make them."}
 }
 
 // sortedSet renders a set of spellings in a stable order.

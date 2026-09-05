@@ -1,7 +1,7 @@
 # Example domain config.
-# This is ONE worked example of an oss-agent domain. Any project copies this
-# file, edits it for their own product, and points oss-agent at it via
-# OSS_DOMAIN_FILE — no platform source changes needed. The example below models a
+# This is ONE worked example of an opsdoctor domain. Any project copies this
+# file, edits it for their own product, and points opsdoctor at it via
+# OPSDOCTOR_DOMAIN_FILE — no platform source changes needed. The example below models a
 # generic Linux storage/HA product; replace every field with your own.
 
 name = "Example storage/infra domain"
@@ -39,7 +39,7 @@ Safety (non-negotiable):
 #      seed, and takes a neighbour slot, ahead of one that is not — imported code
 #      nodes and whatever the model invented stay reachable, just behind.
 #
-# `oss-agent doctor` reports what the graph holds that is not declared here, what
+# `opsdoctor doctor` reports what the graph holds that is not declared here, what
 # is declared and never appeared, and whether the graph was extracted under an
 # older version of these lists.
 entity_types = [
@@ -64,7 +64,7 @@ error_patterns = [
 ]
 
 # Source/doc repositories to ingest into the knowledge graph. Add your project's
-# repos here; oss-agent clones, understands, and imports each.
+# repos here; opsdoctor clones, understands, and imports each.
 repos = []
 
 # Deterministic destructive-command blocks (LLM-independent). The platform owns

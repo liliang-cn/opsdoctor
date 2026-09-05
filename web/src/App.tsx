@@ -34,7 +34,7 @@ export default function App() {
       .then((r) => r.json())
       .then((h: Health) => {
         setHealth(h);
-        if (h?.title) document.title = `oss-agent · ${h.title}`;
+        if (h?.title) document.title = `opsdoctor · ${h.title}`;
       })
       .catch(() => setHealth(null));
   }, []);
@@ -51,7 +51,7 @@ export default function App() {
             <Boxes className="h-5 w-5" />
           </div>
           <div>
-            <div className="text-sm font-semibold leading-tight">oss-agent</div>
+            <div className="text-sm font-semibold leading-tight">opsdoctor</div>
             <div className="text-xs text-muted-foreground">{health?.title || "knowledge platform"}</div>
           </div>
         </div>

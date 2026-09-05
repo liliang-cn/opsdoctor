@@ -21,10 +21,10 @@ import (
 
 	"github.com/liliang-cn/agent-go/v3/pkg/agent"
 
-	"github.com/liliang-cn/oss-agent/internal/cite"
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
-	"github.com/liliang-cn/oss-agent/internal/loganalyze"
+	"github.com/liliang-cn/opsdoctor/internal/cite"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/loganalyze"
 )
 
 // Server holds the shared agent + knowledge store behind the HTTP handlers.
@@ -166,7 +166,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.svc == nil {
-		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OSS_LLM_API_KEY")
+		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OPSDOCTOR_LLM_API_KEY")
 		return
 	}
 	var req askRequest
@@ -193,7 +193,7 @@ type chatRequest struct {
 }
 
 // handleChat is multi-turn: each call runs under a session_id whose conversation
-// history agent-go loads and persists (in its own session store at OSS_DB_PATH),
+// history agent-go loads and persists (in its own session store at OPSDOCTOR_DB_PATH),
 // so follow-up turns remember earlier ones. A new session_id is minted when the
 // client omits it and returned for reuse.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +202,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.svc == nil {
-		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OSS_LLM_API_KEY")
+		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OPSDOCTOR_LLM_API_KEY")
 		return
 	}
 	var req chatRequest
@@ -307,7 +307,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.svc == nil {
-		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OSS_LLM_API_KEY")
+		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OPSDOCTOR_LLM_API_KEY")
 		return
 	}
 	var body aiChatBody
@@ -452,7 +452,7 @@ func chunkText(s string, n int) []string {
 // Accepts the question via POST body {"question"} or ?q= for easy EventSource use.
 func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 	if s.svc == nil {
-		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OSS_LLM_API_KEY")
+		writeErr(w, http.StatusServiceUnavailable, "no LLM configured: set OPSDOCTOR_LLM_API_KEY")
 		return
 	}
 	question := r.URL.Query().Get("q")

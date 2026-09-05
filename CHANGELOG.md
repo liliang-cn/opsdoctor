@@ -4,6 +4,28 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.38.0 — 2026-09-05
+
+Renamed: oss-agent is now **opsdoctor**.
+
+"oss" read as object storage to half the people who saw it and as
+open-source to the other half, and neither told anyone what the program does.
+It reads a product's logs, probes its live state, and answers from a knowledge
+graph of that product's own code and docs — an ops doctor, which is also what
+its `doctor`, `analyze-log` and `diagnose` commands already called it.
+
+What moved: the GitHub repository (the old URL redirects), the Go module path
+`github.com/liliang-cn/opsdoctor`, the root package `opsdoctor`, the CLI
+binary, the `OPSDOCTOR_*` environment prefix, the systemd unit and
+`/opt/opsdoctor` deploy path in the docs, the web UI title.
+
+What did not: the env fallback — every `OPSDOCTOR_*` variable still reads its
+`OSS_*` name, so a host provisioned under the old name starts as before. And
+the ontology schema id, which is a storage key every existing knowledge base
+holds its schema under; a new id would register a second schema beside the
+first rather than replace it. The changelog entries below keep the old name,
+because they describe the versions that carried it.
+
 ## v0.37.0 — 2026-09-02
 
 agent-go v3.23.1. No change in this package; everything builds and every test

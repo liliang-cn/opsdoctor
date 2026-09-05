@@ -1,9 +1,9 @@
-// Command oss-agent is the CLI entry point for the oss-agent ops & support agent.
+// Command opsdoctor is the CLI entry point for the opsdoctor ops & support agent.
 //
-//	oss-agent ask <question>        one-shot Q&A (may call read-only probes)
-//	oss-agent diagnose <symptom>    same loop, framed for troubleshooting
-//	oss-agent check <command...>    test a command against the red-line wall
-//	oss-agent version
+//	opsdoctor ask <question>        one-shot Q&A (may call read-only probes)
+//	opsdoctor diagnose <symptom>    same loop, framed for troubleshooting
+//	opsdoctor check <command...>    test a command against the red-line wall
+//	opsdoctor version
 package main
 
 import (
@@ -22,24 +22,24 @@ import (
 
 	agentpkg "github.com/liliang-cn/agent-go/v3/pkg/agent"
 
-	"github.com/liliang-cn/oss-agent/web"
+	"github.com/liliang-cn/opsdoctor/web"
 
-	"github.com/liliang-cn/oss-agent/internal/agents"
-	"github.com/liliang-cn/oss-agent/internal/config"
-	"github.com/liliang-cn/oss-agent/internal/domain"
-	"github.com/liliang-cn/oss-agent/internal/graphimport"
-	"github.com/liliang-cn/oss-agent/internal/httpapi"
-	"github.com/liliang-cn/oss-agent/internal/ingest"
-	"github.com/liliang-cn/oss-agent/internal/knowledge"
-	"github.com/liliang-cn/oss-agent/internal/loganalyze"
-	"github.com/liliang-cn/oss-agent/internal/objectmodel"
-	"github.com/liliang-cn/oss-agent/internal/safety"
-	"github.com/liliang-cn/oss-agent/internal/salvage"
-	"github.com/liliang-cn/oss-agent/internal/scaffold"
-	"github.com/liliang-cn/oss-agent/internal/schemaimport"
+	"github.com/liliang-cn/opsdoctor/internal/agents"
+	"github.com/liliang-cn/opsdoctor/internal/config"
+	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opsdoctor/internal/graphimport"
+	"github.com/liliang-cn/opsdoctor/internal/httpapi"
+	"github.com/liliang-cn/opsdoctor/internal/ingest"
+	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opsdoctor/internal/loganalyze"
+	"github.com/liliang-cn/opsdoctor/internal/objectmodel"
+	"github.com/liliang-cn/opsdoctor/internal/safety"
+	"github.com/liliang-cn/opsdoctor/internal/salvage"
+	"github.com/liliang-cn/opsdoctor/internal/scaffold"
+	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
-const version = "oss-agent 0.37.0"
+const version = "opsdoctor 0.38.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -101,11 +101,11 @@ func main() {
 
 func runAsk(q string) {
 	if strings.TrimSpace(q) == "" {
-		fail("usage: oss-agent ask <question>")
+		fail("usage: opsdoctor ask <question>")
 	}
 	cfg := config.Load()
 	if cfg.LLMAPIKey == "" {
-		fail("set OSS_LLM_API_KEY (frontier model API key)")
+		fail("set OPSDOCTOR_LLM_API_KEY (frontier model API key)")
 	}
 	svc, store, err := agents.Build(cfg, loadDomain(cfg))
 	if err != nil {
@@ -126,7 +126,7 @@ func runAsk(q string) {
 func runIngest(dir string) {
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -137,7 +137,7 @@ func runIngest(dir string) {
 	ex := agents.BuildExtractor(cfg, loadDomain(cfg))
 
 	if strings.TrimSpace(dir) == "" {
-		fail("usage: oss-agent ingest <dir-with-*.md>   (for a code repo use: ingest-repo <url>)")
+		fail("usage: opsdoctor ingest <dir-with-*.md>   (for a code repo use: ingest-repo <url>)")
 	}
 
 	matches, _ := filepath.Glob(filepath.Join(dir, "*.md"))
@@ -276,13 +276,13 @@ func runResolve(args []string) {
 // source quota treat it like the prose it is.
 func runIngestCLI(args []string) {
 	if len(args) == 0 {
-		fail("usage: oss-agent ingest-cli <binary> [args-before-subcommands...]\n" +
-			"  e.g. oss-agent ingest-cli /usr/local/bin/sds-cli\n" +
-			"       oss-agent ingest-cli kubectl        (walks every subcommand's --help)")
+		fail("usage: opsdoctor ingest-cli <binary> [args-before-subcommands...]\n" +
+			"  e.g. opsdoctor ingest-cli /usr/local/bin/sds-cli\n" +
+			"       opsdoctor ingest-cli kubectl        (walks every subcommand's --help)")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	bin, rest := args[0], args[1:]
 	ctx := context.Background()
@@ -332,16 +332,16 @@ func runIngestCLI(args []string) {
 
 // runIngestRepo is the one-liner: clone → understand → import. It shallow-clones
 // (if given a URL), produces an Understand-Anything knowledge-graph.json (running
-// the configured OSS_UNDERSTAND_CMD if the graph isn't already there), and imports
+// the configured OPSDOCTOR_UNDERSTAND_CMD if the graph isn't already there), and imports
 // that graph into cortexdb. If no graph can be produced, it falls back to the
 // text/code error-string ingest. Importing needs an embedder key.
 func runIngestRepo(arg string) {
 	if strings.TrimSpace(arg) == "" {
-		fail("usage: oss-agent ingest-repo <git-url|local-dir>")
+		fail("usage: opsdoctor ingest-repo <git-url|local-dir>")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -370,7 +370,7 @@ func runIngestRepo(arg string) {
 	// 2. understand → knowledge-graph.json (skip if it already exists)
 	graphPath := filepath.Join(dir, ".understand-anything", "knowledge-graph.json")
 	if !fileExists(graphPath) {
-		if uc := os.Getenv("OSS_UNDERSTAND_CMD"); uc != "" {
+		if uc := config.Getenv("OPSDOCTOR_UNDERSTAND_CMD"); uc != "" {
 			fmt.Printf("[2/3] understanding: %s (cwd=%s)\n", uc, dir)
 			c := exec.CommandContext(ctx, "bash", "-lc", uc)
 			c.Dir = dir
@@ -379,7 +379,7 @@ func runIngestRepo(arg string) {
 				fmt.Fprintf(os.Stderr, "  understand step failed: %v\n", e)
 			}
 		} else {
-			fmt.Println("[2/3] OSS_UNDERSTAND_CMD not set — skipping AST/LLM graph step")
+			fmt.Println("[2/3] OPSDOCTOR_UNDERSTAND_CMD not set — skipping AST/LLM graph step")
 		}
 	} else {
 		fmt.Printf("[2/3] found existing graph %s\n", graphPath)
@@ -430,11 +430,11 @@ func runIngestRepo(arg string) {
 // dir). Only the named source is touched; the other sources are untouched.
 func runRefresh(arg string) {
 	if strings.TrimSpace(arg) == "" {
-		fail("usage: oss-agent refresh <git-url|local-dir>")
+		fail("usage: opsdoctor refresh <git-url|local-dir>")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -500,7 +500,7 @@ func fileExists(p string) bool {
 
 // runServe starts the HTTP API + embedded web UI. With an LLM key it serves the
 // full agent (/ask, /chat, /analyze-log?diagnose=true); without one it serves the
-// search-only endpoints. Address from OSS_HTTP_ADDR (default :7634). When openUI
+// search-only endpoints. Address from OPSDOCTOR_HTTP_ADDR (default :7634). When openUI
 // is true (the `ui` command) it also opens the browser.
 func runServe(openUI bool) {
 	cfg := config.Load()
@@ -516,7 +516,7 @@ func runServe(openUI bool) {
 		}
 		defer svc.Close()
 	} else {
-		fmt.Fprintln(os.Stderr, "warning: OSS_LLM_API_KEY not set — serving search-only (no /ask, /diagnose)")
+		fmt.Fprintln(os.Stderr, "warning: OPSDOCTOR_LLM_API_KEY not set — serving search-only (no /ask, /diagnose)")
 		store, err = knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim,
 			agents.StoreOptions(dom)...)
 		if err != nil {
@@ -533,11 +533,11 @@ func runServe(openUI bool) {
 		}
 	}
 
-	addr := env("OSS_HTTP_ADDR", ":7634")
-	convMem := svc != nil && env("OSS_CONV_MEMORY", "on") != "off"
-	rlPerMin := envInt("OSS_RATE_LIMIT_PER_MIN", 30) // per-IP LLM-endpoint cap; 0 = unlimited
+	addr := env("OPSDOCTOR_HTTP_ADDR", ":7634")
+	convMem := svc != nil && env("OPSDOCTOR_CONV_MEMORY", "on") != "off"
+	rlPerMin := envInt("OPSDOCTOR_RATE_LIMIT_PER_MIN", 30) // per-IP LLM-endpoint cap; 0 = unlimited
 	srv := httpapi.New(svc, store, dom, convMem, static, rlPerMin)
-	fmt.Printf("oss-agent serving %s on %s  (llm=%v, probes=%d, conv_memory=%v, ui=%v)\n", dom.Name, addr, svc != nil, len(dom.Probes), convMem, static != nil)
+	fmt.Printf("opsdoctor serving %s on %s  (llm=%v, probes=%d, conv_memory=%v, ui=%v)\n", dom.Name, addr, svc != nil, len(dom.Probes), convMem, static != nil)
 	fmt.Println("API under /api/* ; web UI at / (if built)")
 
 	if openUI && static != nil {
@@ -565,7 +565,7 @@ func openBrowser(url string) {
 
 // env mirrors config's helper for the serve address.
 func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
+	if v := config.Getenv(key); v != "" {
 		return v
 	}
 	return def
@@ -573,7 +573,7 @@ func env(key, def string) string {
 
 // envInt reads an integer env var with a default.
 func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
+	if v := config.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
@@ -587,7 +587,7 @@ func envInt(key string, def int) int {
 func runChat() {
 	cfg := config.Load()
 	if cfg.LLMAPIKey == "" {
-		fail("set OSS_LLM_API_KEY (frontier model API key)")
+		fail("set OPSDOCTOR_LLM_API_KEY (frontier model API key)")
 	}
 	svc, store, err := agents.Build(cfg, loadDomain(cfg))
 	if err != nil {
@@ -596,7 +596,7 @@ func runChat() {
 	defer svc.Close()
 	defer store.Close()
 
-	fmt.Println("oss-agent chat — multi-turn (history kept across turns). Type 'exit' to quit.")
+	fmt.Println("opsdoctor chat — multi-turn (history kept across turns). Type 'exit' to quit.")
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for {
@@ -636,7 +636,7 @@ func runChat() {
 // the red-line wall), using the distilled findings as evidence.
 func runAnalyzeLog(path string) {
 	if strings.TrimSpace(path) == "" {
-		fail("usage: oss-agent analyze-log <log-file|dir|.tar.gz|.zip>")
+		fail("usage: opsdoctor analyze-log <log-file|dir|.tar.gz|.zip>")
 	}
 	cfg := config.Load()
 	dom := loadDomain(cfg)
@@ -655,7 +655,7 @@ func runAnalyzeLog(path string) {
 	fmt.Print(rep.Render(15))
 
 	if cfg.LLMAPIKey == "" {
-		fmt.Println("\n(set OSS_LLM_API_KEY for an AI root-cause diagnosis grounded in the knowledge base)")
+		fmt.Println("\n(set OPSDOCTOR_LLM_API_KEY for an AI root-cause diagnosis grounded in the knowledge base)")
 		return
 	}
 	if len(rep.Groups) == 0 {
@@ -689,11 +689,11 @@ func runAnalyzeLog(path string) {
 // (node summaries → vectors, nodes/edges → ontology graph).
 func runImportGraph(path string) {
 	if strings.TrimSpace(path) == "" {
-		fail("usage: oss-agent import-graph <knowledge-graph.json>")
+		fail("usage: opsdoctor import-graph <knowledge-graph.json>")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -711,11 +711,11 @@ func runImportGraph(path string) {
 // runImportSchema extracts an object model from a SQL schema (DDL) into the graph.
 func runImportSchema(path string) {
 	if strings.TrimSpace(path) == "" {
-		fail("usage: oss-agent import-schema <schema.sql>")
+		fail("usage: opsdoctor import-schema <schema.sql>")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -733,11 +733,11 @@ func runImportSchema(path string) {
 // (.proto / OpenAPI .yaml|.json / C-struct .h|.c / .sql) into the graph.
 func runImportModel(path string) {
 	if strings.TrimSpace(path) == "" {
-		fail("usage: oss-agent import-model <file.proto|openapi.yaml|*.h|schema.sql>")
+		fail("usage: opsdoctor import-model <file.proto|openapi.yaml|*.h|schema.sql>")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	store, err := openKnowledge(cfg)
 	if err != nil {
@@ -755,11 +755,11 @@ func runImportModel(path string) {
 // run's intermediate batches (no re-run needed), then imports it.
 func runSalvage(arg string) {
 	if strings.TrimSpace(arg) == "" {
-		fail("usage: oss-agent salvage <repo-dir>   (a repo whose .understand-anything/intermediate exists)")
+		fail("usage: opsdoctor salvage <repo-dir>   (a repo whose .understand-anything/intermediate exists)")
 	}
 	cfg := config.Load()
 	if cfg.EmbAPIKey == "" {
-		fail("set OSS_EMB_API_KEY (or OSS_LLM_API_KEY) for embeddings")
+		fail("set OPSDOCTOR_EMB_API_KEY (or OPSDOCTOR_LLM_API_KEY) for embeddings")
 	}
 	merged, ss, err := salvage.Salvage(arg)
 	if err != nil {
@@ -782,11 +782,11 @@ func runSalvage(arg string) {
 // domain.generated.toml. The operator must review it (esp. red_lines) before use.
 func runInit(arg string) {
 	if strings.TrimSpace(arg) == "" {
-		fail("usage: oss-agent init <git-url|local-dir>   (drafts domain.generated.toml via the LLM)")
+		fail("usage: opsdoctor init <git-url|local-dir>   (drafts domain.generated.toml via the LLM)")
 	}
 	cfg := config.Load()
 	if cfg.LLMAPIKey == "" {
-		fail("set OSS_LLM_API_KEY — init drafts the config with the LLM")
+		fail("set OPSDOCTOR_LLM_API_KEY — init drafts the config with the LLM")
 	}
 	ctx := context.Background()
 
@@ -819,13 +819,13 @@ func runInit(arg string) {
 	}
 	fmt.Printf("\nwrote %s\n", out)
 	fmt.Println("→ REVIEW it (especially [[red_lines]] and [[probes]]), then:")
-	fmt.Printf("   cp %s domain.toml && oss-agent domain    # verify it loads\n", out)
+	fmt.Printf("   cp %s domain.toml && opsdoctor domain    # verify it loads\n", out)
 }
 
 // runSearch queries the knowledge base directly (no LLM) — useful to verify ingest.
 func runSearch(query string) {
 	if strings.TrimSpace(query) == "" {
-		fail("usage: oss-agent search <query>")
+		fail("usage: opsdoctor search <query>")
 	}
 	cfg := config.Load()
 	store, err := openKnowledge(cfg)
@@ -854,7 +854,7 @@ func runSearch(query string) {
 // uses): top hits plus related code reached along calls/contains/… edges.
 func runSearchGraph(query string) {
 	if strings.TrimSpace(query) == "" {
-		fail("usage: oss-agent search-graph <query>")
+		fail("usage: opsdoctor search-graph <query>")
 	}
 	cfg := config.Load()
 	store, err := openKnowledge(cfg)
@@ -887,7 +887,7 @@ func runSearchGraph(query string) {
 // runCheck exercises the active domain's red-line wall without any LLM.
 func runCheck(cmd string) {
 	if strings.TrimSpace(cmd) == "" {
-		fail("usage: oss-agent check <command...>")
+		fail("usage: opsdoctor check <command...>")
 	}
 	dom := loadDomain(config.Load())
 	filter, err := safety.NewFromSpecs(dom.RedLines)
@@ -907,34 +907,34 @@ func runCheck(cmd string) {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `oss-agent — AI ops & support agent for storage products
+	fmt.Fprint(os.Stderr, `opsdoctor — AI ops & support agent for storage products
 (generic engine; the active domain is a plug-in supplied entirely by a domain.toml)
 
 usage:
-  oss-agent init <url|dir>      draft a domain.toml for a repo via the LLM (review before use)
-  oss-agent ask <question>      ask the agent (calls probes + knowledge search)
-  oss-agent diagnose <symptom>  troubleshoot a cluster symptom
-  oss-agent chat                multi-turn conversation (history kept; ReAct tools)
-  oss-agent serve               start the HTTP API (OSS_HTTP_ADDR, default :7634)
-  oss-agent analyze-log <path>  triage a log file / dir / .tar.gz / .zip, then AI diagnosis
-  oss-agent ingest <dir>        ingest *.md docs from a directory
-  oss-agent ingest-repo <url>   one-liner: clone → understand → import (auto-salvages a stall)
-  oss-agent refresh <url|dir>   purge one source (catches deletions) and re-import it
-  oss-agent import-graph <f>    import an Understand-Anything knowledge-graph.json
-  oss-agent import-schema <f>   import a SQL schema (CREATE TABLE → entity, FK → relation)
-  oss-agent import-model <f>    import an object model: .proto / OpenAPI .yaml|.json / .h struct / .sql
-  oss-agent salvage <repo-dir>  rebuild a graph from a stalled understand run's intermediate batches
-  oss-agent check <command...>  test a command against the red-line safety wall
-  oss-agent resolve [--apply]   merge entities that are one concept spelled several ways
-  oss-agent version
+  opsdoctor init <url|dir>      draft a domain.toml for a repo via the LLM (review before use)
+  opsdoctor ask <question>      ask the agent (calls probes + knowledge search)
+  opsdoctor diagnose <symptom>  troubleshoot a cluster symptom
+  opsdoctor chat                multi-turn conversation (history kept; ReAct tools)
+  opsdoctor serve               start the HTTP API (OPSDOCTOR_HTTP_ADDR, default :7634)
+  opsdoctor analyze-log <path>  triage a log file / dir / .tar.gz / .zip, then AI diagnosis
+  opsdoctor ingest <dir>        ingest *.md docs from a directory
+  opsdoctor ingest-repo <url>   one-liner: clone → understand → import (auto-salvages a stall)
+  opsdoctor refresh <url|dir>   purge one source (catches deletions) and re-import it
+  opsdoctor import-graph <f>    import an Understand-Anything knowledge-graph.json
+  opsdoctor import-schema <f>   import a SQL schema (CREATE TABLE → entity, FK → relation)
+  opsdoctor import-model <f>    import an object model: .proto / OpenAPI .yaml|.json / .h struct / .sql
+  opsdoctor salvage <repo-dir>  rebuild a graph from a stalled understand run's intermediate batches
+  opsdoctor check <command...>  test a command against the red-line safety wall
+  opsdoctor resolve [--apply]   merge entities that are one concept spelled several ways
+  opsdoctor version
 
 env:
-  OSS_LLM_API_KEY   frontier model API key (required for ask/diagnose)
-  OSS_LLM_BASE_URL  default https://api.openai.com/v1
-  OSS_LLM_MODEL     default gpt-4o
-  OSS_EMB_*         embedder for GraphRAG memory (defaults to LLM creds)
-  OSS_DB_PATH       graph-memory db (default ./data/oss-agent.db)
-  OSS_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+  OPSDOCTOR_LLM_API_KEY   frontier model API key (required for ask/diagnose)
+  OPSDOCTOR_LLM_BASE_URL  default https://api.openai.com/v1
+  OPSDOCTOR_LLM_MODEL     default gpt-4o
+  OPSDOCTOR_EMB_*         embedder for GraphRAG memory (defaults to LLM creds)
+  OPSDOCTOR_DB_PATH       graph-memory db (default ./data/opsdoctor.db)
+  OPSDOCTOR_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
                       (e.g. claude -p "/understand ." --dangerously-skip-permissions)
 `)
 }
@@ -961,7 +961,7 @@ func runDomain() {
 func loadDomain(cfg config.Config) *domain.Domain {
 	d, err := domain.Load(cfg.DomainFile)
 	if err != nil {
-		fail("%v\n  set OSS_DOMAIN_FILE to your product's domain.toml (see examples/example/domain.toml)", err)
+		fail("%v\n  set OPSDOCTOR_DOMAIN_FILE to your product's domain.toml (see examples/example/domain.toml)", err)
 	}
 	return d
 }
