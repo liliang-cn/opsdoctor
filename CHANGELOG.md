@@ -4,6 +4,27 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.40.0 — 2026-09-05
+
+Dependencies only; no source change in this package.
+
+agent-go v3.23.1 -> v3.31.0, cortexdb 2.90.0 -> 2.93.0, alchemy
+v0.1.1-0.20260903010501 -> v0.3.0 (the pseudo-version the alchemy work shipped
+against is now a release), eval-go -> v0.5.0, agentexec v0.5.0, openai-go
+v3.56.0. Through agent-go: grpc 1.81.1 -> 1.83.2 — the release that fixes a
+connected client being able to exhaust a server's memory, which matters here
+because `serve` is long-lived — plus protobuf 1.36.12, otel 1.44 -> 1.46,
+mcp-go v1.0.0, go-sdk v1.7.0, sqlite 1.38.2 -> 1.58.0, qdrant v1.19.0, bleve
+2.6.1.
+
+`make check` is green and the existing store still opens and reads under
+cortexdb 2.93.0 — 425 sources, 9683 chunks, 6048 nodes, 17546 edges, unchanged.
+
+The go directive stays at 1.25.5. chromedp v0.16.0 and the 2026
+go-json-experiment/json both declare `go 1.26`, so agent-go held them back
+rather than move the language floor of everything downstream; that decision
+lands here as the absence of a bump.
+
 ## v0.39.0 — 2026-09-05
 
 Prose can be extracted through alchemy.

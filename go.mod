@@ -4,9 +4,9 @@ go 1.25.5
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/liliang-cn/agent-go/v3 v3.23.1
-	github.com/liliang-cn/alchemy v0.1.1-0.20260903010501-84536bc91e9c
-	github.com/liliang-cn/cortexdb/v2 v2.90.0
+	github.com/liliang-cn/agent-go/v3 v3.31.0
+	github.com/liliang-cn/alchemy v0.3.0
+	github.com/liliang-cn/cortexdb/v2 v2.93.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -18,31 +18,33 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/liliang-cn/agentexec v0.5.0 // indirect
 	github.com/oasdiff/yaml v0.1.0 // indirect
 	github.com/oasdiff/yaml3 v0.0.13 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
+	golang.org/x/time v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 )
 
 require (
 	github.com/0x51-dev/rdf v0.1.0 // indirect
 	github.com/0x51-dev/rids v0.1.0 // indirect
 	github.com/0x51-dev/upeg v0.1.0 // indirect
-	github.com/JohannesKaufmann/dom v0.2.0 // indirect
-	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.0 // indirect
-	github.com/PuerkitoBio/goquery v1.10.3 // indirect
+	github.com/JohannesKaufmann/dom v0.3.1 // indirect
+	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2 // indirect
+	github.com/PuerkitoBio/goquery v1.13.0 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
-	github.com/andybalholm/cascadia v1.3.3 // indirect
+	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
-	github.com/blevesearch/bleve/v2 v2.6.0 // indirect
-	github.com/blevesearch/bleve_index_api v1.3.11 // indirect
-	github.com/blevesearch/geo v0.2.5 // indirect
-	github.com/blevesearch/go-faiss v1.1.0 // indirect
+	github.com/blevesearch/bleve/v2 v2.6.1 // indirect
+	github.com/blevesearch/bleve_index_api v1.4.1 // indirect
+	github.com/blevesearch/geo v0.2.6 // indirect
+	github.com/blevesearch/go-faiss v1.1.5 // indirect
 	github.com/blevesearch/go-porterstemmer v1.0.3 // indirect
 	github.com/blevesearch/gtreap v0.1.1 // indirect
 	github.com/blevesearch/mmap-go v1.2.0 // indirect
-	github.com/blevesearch/scorch_segment_api/v2 v2.4.7 // indirect
+	github.com/blevesearch/scorch_segment_api/v2 v2.4.10 // indirect
 	github.com/blevesearch/segment v0.9.1 // indirect
 	github.com/blevesearch/snowballstem v0.9.0 // indirect
 	github.com/blevesearch/upsidedown_store_api v1.0.2 // indirect
@@ -53,11 +55,11 @@ require (
 	github.com/blevesearch/zapx/v14 v14.4.3 // indirect
 	github.com/blevesearch/zapx/v15 v15.4.3 // indirect
 	github.com/blevesearch/zapx/v16 v16.3.4 // indirect
-	github.com/blevesearch/zapx/v17 v17.1.2 // indirect
+	github.com/blevesearch/zapx/v17 v17.2.3 // indirect
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327 // indirect
 	github.com/chromedp/chromedp v0.14.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
-	github.com/creack/pty v1.1.21 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dslipak/pdf v0.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -82,18 +84,18 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/json-iterator/go v0.0.0-20171115153421-f7279a603ede // indirect
-	github.com/liliang-cn/eval-go v0.4.1-0.20260815074844-98249dace521
+	github.com/liliang-cn/eval-go v0.5.0
 	github.com/liliang-cn/mcp-swagger-server v1.3.0 // indirect
 	github.com/liliang-cn/pipeit v0.1.0 // indirect
 	github.com/liliang-cn/skills-go v1.9.0 // indirect
-	github.com/mark3labs/mcp-go v0.32.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/mark3labs/mcp-go v1.0.0 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/mschoch/smat v0.2.0 // indirect
-	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/openai/openai-go/v3 v3.51.0 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/openai/openai-go/v3 v3.56.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
-	github.com/qdrant/go-client v1.15.2 // indirect
+	github.com/qdrant/go-client v1.19.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
@@ -107,17 +109,16 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.66.3 // indirect
+	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.38.2 // indirect
+	modernc.org/memory v1.12.1 // indirect
+	modernc.org/sqlite v1.58.0 // indirect
 )
