@@ -4,9 +4,9 @@ go 1.25.5
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/liliang-cn/agent-go/v3 v3.31.0
-	github.com/liliang-cn/alchemy v0.3.0
-	github.com/liliang-cn/cortexdb/v2 v2.93.0
+	github.com/liliang-cn/agent-go/v3 v3.32.0
+	github.com/liliang-cn/alchemy v0.4.0
+	github.com/liliang-cn/cortexdb/v2 v2.98.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -95,7 +95,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/openai/openai-go/v3 v3.56.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
-	github.com/qdrant/go-client v1.19.0 // indirect
+	github.com/qdrant/go-client v1.19.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect

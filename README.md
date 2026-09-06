@@ -100,8 +100,16 @@ OPSDOCTOR_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through 
 OPSDOCTOR_ALCHEMY_TOKEN   its bearer token   OPSDOCTOR_ALCHEMY_TLS=1 to use TLS
 ```
 
+Any OpenAI-compatible endpoint works, and the LLM and the embedder need not be the
+same provider. What we run:
+
+```
+OPSDOCTOR_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSDOCTOR_LLM_MODEL=gemini-3.8-flash-high
+```
+
 The embedder used to query must match the one used to build the store (e.g. ollama
-`embeddinggemma`, 768-dim).
+`embeddinggemma`, 768-dim) — so the LLM above can be swapped for another at any
+time, and the embedder cannot.
 
 ## Building a new domain
 
@@ -131,6 +139,37 @@ built-in extractor cannot say:
 Entities keep the store's identity — the same gateway named in forty documents
 is one node — and `refresh`, `resolve`, `doctor` and citations work as before.
 `opsdoctor doctor` reports whether alchemy is reachable with the token given.
+
+**What alchemy holds a job on is decided in `domain.toml`, not by alchemy.**
+The hold above fires on three per-relation flags, and the default for each is
+silence:
+
+```toml
+[[relation]]
+name = "ACTIVE_ON"          # a resource is Primary on one node at a time
+from = "ResourceGroup"
+to   = "Node"
+at_most_one_out = true      # a second such edge is a question for a person
+
+[[relation]]
+name = "replicates_to"      # both directions are true at once
+from = ["Node", "Replica"]
+to   = ["Node", "Replica"]
+both_ways = true            # without this, alchemy reads the pair as a conflict
+```
+
+Both defaults are wrong for some relation in every real vocabulary. Undeclared,
+a **symmetric** relation makes alchemy read the two directions as two sources
+contradicting each other and withhold the whole document's graph — measured, not
+hypothetical: a two-line document saying node-b and node-e replicate to each
+other is held on `both_ways`'s absence and stores no edges. And without
+`at_most_one_in` / `at_most_one_out` nothing can be a contradiction at all: a
+document that says a resource is on node-b and then corrects itself to node-e
+stores both edges and reports no disagreement, because two edges of one type
+between different pairs are two facts unless the vocabulary says otherwise.
+
+So a domain that declares no ends gets alchemy's provenance and none of its
+refusals. `examples/example/domain.toml` shows both flags in place.
 3. Ingest the project's repos (`ingest-repo`) and docs (`ingest-repo` text path).
 4. `ask` / `analyze-log` away. No engine code changes.
 

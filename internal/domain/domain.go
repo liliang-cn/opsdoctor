@@ -76,6 +76,34 @@ type Relation struct {
 	Name string  `toml:"name"`
 	From TypeSet `toml:"from"`
 	To   TypeSet `toml:"to"`
+
+	// BothWays says an edge of this type may run either way between one pair
+	// of things, and that both directions may hold at once.
+	//
+	// It matters only to alchemy, which reads two records running opposite
+	// ways as two sources contradicting each other and holds the job on every
+	// pair. That reading is right for `configured_by` and wrong for
+	// `replicates_to`, and nothing but this field can tell them apart. A
+	// symmetric relation left undeclared does not degrade — it stops every
+	// ingest that extracts the pair, on a question with no right answer.
+	BothWays bool `toml:"both_ways"`
+
+	// AtMostOneIn says a node may be on the `to` end of at most one edge of
+	// this type; AtMostOneOut says the same for the `from` end. They are how
+	// the vocabulary says a fact can go out of date: without them, a corpus
+	// that learns a resource moved to another node holds both edges and
+	// reports no disagreement, because two edges of one type between different
+	// pairs are two facts and nothing else here could say otherwise.
+	//
+	// A second edge is a question for a person, not a silent replacement:
+	// alchemy holds the job rather than picking the later record, because a
+	// correction can be the mistake.
+	//
+	// The asymmetry is real. "A resource group runs on one node" constrains
+	// the `to` end; "a promoter config promotes one resource" constrains the
+	// `from` end; most relations want neither.
+	AtMostOneIn  bool `toml:"at_most_one_in"`
+	AtMostOneOut bool `toml:"at_most_one_out"`
 }
 
 // TypeSet is one or more entity types, written either way round in TOML.

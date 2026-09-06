@@ -46,6 +46,12 @@ func OntologyFor(dom *domain.Domain) (blob []byte, id string, err error) {
 		rt := ontology.RelationType{Name: t}
 		if e, ok := ends[strings.ToLower(t)]; ok {
 			rt.From, rt.To = []string(e.From), []string(e.To)
+			// The three flags alchemy holds a job on. They are the whole of
+			// what it can refuse for: without BothWays a symmetric relation
+			// stops every ingest that extracts the pair, and without the two
+			// cardinality flags a corpus that corrects itself reports no
+			// disagreement at all.
+			rt.BothWays, rt.AtMostOneIn, rt.AtMostOneOut = e.BothWays, e.AtMostOneIn, e.AtMostOneOut
 		}
 		v.Relations = append(v.Relations, rt)
 	}
@@ -83,7 +89,13 @@ func fingerprint(v ontology.Vocabulary) string {
 		to := append([]string(nil), r.To...)
 		sort.Strings(from)
 		sort.Strings(to)
-		rels = append(rels, r.Name+"\x1f"+strings.Join(from, ",")+"\x1f"+strings.Join(to, ","))
+		// The flags are part of the fingerprint because they are part of the
+		// meaning: turning on AtMostOneIn changes which graphs the ontology
+		// admits, and a graph extracted before the change was checked against
+		// a different vocabulary. An id that did not move would say otherwise.
+		rels = append(rels, fmt.Sprintf("%s\x1f%s\x1f%s\x1f%t\x1f%t\x1f%t",
+			r.Name, strings.Join(from, ","), strings.Join(to, ","),
+			r.BothWays, r.AtMostOneIn, r.AtMostOneOut))
 	}
 	sort.Strings(ents)
 	sort.Strings(rels)

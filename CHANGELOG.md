@@ -4,6 +4,46 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.41.0 — 2026-09-06
+
+The hold that justified the alchemy integration could not fire.
+
+v0.39.0 shipped "a document whose sources contradict each other is held", and
+that sentence was true of alchemy and false of opsdoctor. alchemy decides a
+contradiction from three per-relation flags in the ontology — `both_ways`,
+`at_most_one_in`, `at_most_one_out` — and `OntologyFor` translated only names
+and ends, so all three arrived false on every relation. Nothing could be a
+cardinality conflict, and every symmetric relation was one.
+
+Measured against the live service on the LAN, both halves:
+
+- A document that says a resource group is active on node-b and then corrects
+  itself to node-e stored **both** edges and reported no disagreement. It is
+  now held — `1 conflict(s), first: resourcegroup:sds-meta -[ACTIVE_ON]->
+  node:node-e` — with the vectors stored and the graph withheld.
+- A document saying node-b and node-e replicate to each other was **held on a
+  question with no right answer**, and stored no edges at all. With
+  `both_ways = true` both edges are stored and the job finishes.
+
+The second is the one that mattered: SDS's own `domain.toml` declares two
+symmetric relations (`replicates_to`, `conflicts_with`), so any document
+describing a healthy DRBD link would have had its whole graph withheld — an
+ingest that reports success and writes nothing.
+
+`[[relation]]` now takes the three flags, they reach alchemy, and they are part
+of the ontology fingerprint: turning one on changes which graphs the vocabulary
+admits, so a graph extracted before the change must not claim to have been
+checked after it. `examples/example/domain.toml` gains the ends and flags it
+never had, and `opsdoctor domain` refuses overlapping ends as before.
+
+Also: agent-go v3.31.0 -> v3.32.0, cortexdb 2.93.0 -> 2.98.0, alchemy v0.3.0 ->
+v0.4.0 (the release where a job that was held and then answered gets its
+vectors), qdrant v1.19.1. `make check` green.
+
+Docs record what we actually run: the LLM is `gemini-3.8-flash-high` on the cpa
+gateway and the embedder stays on DashScope — they were never required to be
+the same provider, and the README said so only by implication.
+
 ## v0.40.0 — 2026-09-05
 
 Dependencies only; no source change in this package.

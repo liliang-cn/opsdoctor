@@ -127,3 +127,56 @@ argv = ["vgs"]
 name = "zpool_status"
 description = "Show ZFS pool health and device status."
 argv = ["zpool", "status"]
+
+# ---------------------------------------------------------------------------
+# Relation ends and flags. A [[relation]] says what may sit on each side of an
+# edge type, which the flat relation_types list cannot — and, for the three
+# flags below, whether alchemy should stop the job when two records disagree.
+#
+# These blocks live BELOW every top-level key on purpose. In TOML a table
+# header ends the top-level section, so a [[relation]] written next to
+# relation_types — where it reads best — silently swallows error_patterns and
+# probes into itself. Nothing fails; the domain just comes up with none.
+#
+# The flags matter only when OPSDOCTOR_ALCHEMY_ADDR is set. They are the whole
+# of what alchemy can refuse for, and both defaults are wrong for some
+# relation in every real vocabulary:
+#
+#   both_ways        — an edge of this type may run either way between one
+#                      pair, and both may hold at once. Undeclared, alchemy
+#                      reads the pair as two sources contradicting each other
+#                      and WITHHOLDS the document's whole graph. Every
+#                      symmetric relation needs this or it stops ingest.
+#   at_most_one_out  — a node may be on the `from` end of at most one edge of
+#   at_most_one_in     this type; `_in` says the same for the `to` end. They
+#                      are how the vocabulary says a fact can go out of date.
+#                      Without them a corpus that learns a resource moved
+#                      holds both edges and reports no disagreement at all.
+#
+# A second edge on a constrained end is a question for a person, not a silent
+# replacement: alchemy holds the job rather than preferring the later record,
+# because a correction can be the mistake.
+# ---------------------------------------------------------------------------
+
+# A resource is Primary on one node at a time — that is what the promoter is
+# for, and it is the fact most likely to be stale in a document.
+[[relation]]
+name = "DEPLOYED_ON"
+from = "Resource"
+to   = "Node"
+at_most_one_out = true
+
+# Replication runs between two peers and both directions are true at once.
+# Without both_ways this one relation withholds the graph of every document
+# that describes a healthy link.
+[[relation]]
+name = "MUTUALLY_EXCLUSIVE"
+from = ["Resource", "ConfigParameter", "State"]
+to   = ["Resource", "ConfigParameter", "State"]
+both_ways = true
+
+# CONTAINS is deliberately left undeclared. It is a CHAIN — a cluster contains
+# a pool contains a volume — so the middle term is on both ends, and ends that
+# overlap without being identical leave an edge between two middle terms
+# reading both ways. `opsdoctor domain` refuses exactly that, which is how you
+# find out; the flat relation_types entry above still extracts and expands it.

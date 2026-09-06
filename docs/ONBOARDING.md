@@ -18,11 +18,14 @@ The engine has no compiled-in product knowledge. A worked example
 ## 0. Prerequisites
 
 - Go 1.25+ (build). Node only if you change the front-end (`make web`).
-- An **embedder** and an **LLM**, both OpenAI-compatible. We use Alibaba DashScope:
-  - LLM: `qwen3.7-plus`
-  - Embedder: `text-embedding-v4` (1024-dim)
+- An **embedder** and an **LLM**, both OpenAI-compatible. They need not come from
+  the same provider — here the LLM is on the cpa gateway and the embedder is
+  Alibaba DashScope:
+  - LLM: `gemini-3.8-flash-high` on `https://cpa.superleo.app/v1`
+  - Embedder: `text-embedding-v4` (1024-dim) on DashScope
   - (any OpenAI-compatible endpoint works; the query embedder MUST match the one
-    used to build the index.)
+    used to build the index — the LLM can be swapped at any time, the embedder
+    cannot.)
 - For code-graph ingestion: the [Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)
   `/understand` skill reachable via `OPSDOCTOR_UNDERSTAND_CMD` (e.g. `claude -p "/understand ." --dangerously-skip-permissions`).
 
@@ -30,7 +33,7 @@ Environment used throughout (export once):
 
 ```bash
 export OPSDOCTOR_DOMAIN_FILE=examples/example/domain.toml
-export OPSDOCTOR_LLM_API_KEY=<key>   OPSDOCTOR_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OPSDOCTOR_LLM_MODEL=qwen3.7-plus
+export OPSDOCTOR_LLM_API_KEY=<key>   OPSDOCTOR_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSDOCTOR_LLM_MODEL=gemini-3.8-flash-high
 export OPSDOCTOR_EMB_API_KEY=<key>   OPSDOCTOR_EMB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OPSDOCTOR_EMB_MODEL=text-embedding-v4  OPSDOCTOR_EMB_DIM=1024
 export OPSDOCTOR_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissions'
 ```
@@ -168,7 +171,7 @@ OPSDOCTOR_DOMAIN_FILE=/opt/opsdoctor/domain.toml
 OPSDOCTOR_KNOWLEDGE_DB_PATH=/opt/opsdoctor/data/knowledge.db
 OPSDOCTOR_DB_PATH=/opt/opsdoctor/data/opsdoctor.db
 OPSDOCTOR_HTTP_ADDR=127.0.0.1:47634
-OPSDOCTOR_LLM_API_KEY=...      OPSDOCTOR_LLM_BASE_URL=...  OPSDOCTOR_LLM_MODEL=qwen3.7-plus
+OPSDOCTOR_LLM_API_KEY=...      OPSDOCTOR_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSDOCTOR_LLM_MODEL=gemini-3.8-flash-high
 OPSDOCTOR_EMB_API_KEY=...      OPSDOCTOR_EMB_BASE_URL=...  OPSDOCTOR_EMB_MODEL=text-embedding-v4  OPSDOCTOR_EMB_DIM=1024
 OPSDOCTOR_RATE_LIMIT_PER_MIN=30
 ENV
