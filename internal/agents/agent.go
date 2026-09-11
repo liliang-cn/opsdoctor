@@ -123,30 +123,44 @@ func AlchemyExtractor(cfg config.Config, dom *domain.Domain) (*alchemyclient.Ext
 	return ex, nil
 }
 
+// NewLLMProvider builds the OpenAI-compatible generator for these settings.
+//
+// Exported so the runtime swap builds its replacement exactly the way startup
+// built the original — a second construction path is a second set of defaults
+// waiting to disagree with the first.
+func NewLLMProvider(baseURL, apiKey, model string) (agdomain.Generator, error) {
+	return providers.NewOpenAILLMProvider(&agdomain.OpenAIProviderConfig{
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
+		LLMModel: model,
+	})
+}
+
 // Build constructs the configured agent service and its knowledge store for the
 // given domain. Caller must Close both.
-func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.Store, error) {
-	llm, err := providers.NewOpenAILLMProvider(&agdomain.OpenAIProviderConfig{
-		BaseURL:  cfg.LLMBaseURL,
-		APIKey:   cfg.LLMAPIKey,
-		LLMModel: cfg.LLMModel,
-	})
+//
+// The returned SwappableLLM is the handle the model is changed through while
+// the service runs; see swappable.go for why the indirection is here and not in
+// agent-go.
+func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.Store, *SwappableLLM, error) {
+	provider, err := NewLLMProvider(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	if err != nil {
-		return nil, nil, fmt.Errorf("init llm: %w", err)
+		return nil, nil, nil, fmt.Errorf("init llm: %w", err)
 	}
+	llm := NewSwappableLLM(provider, LLMDesc{BaseURL: cfg.LLMBaseURL, Model: cfg.LLMModel})
 	emb, err := providers.NewOpenAIEmbedderProvider(&agdomain.OpenAIProviderConfig{
 		BaseURL:        cfg.EmbBaseURL,
 		APIKey:         cfg.EmbAPIKey,
 		EmbeddingModel: cfg.EmbModel,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("init embedder: %w", err)
+		return nil, nil, nil, fmt.Errorf("init embedder: %w", err)
 	}
 
 	store, err := knowledge.Open(cfg.KnowledgeDBPath, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim,
 		StoreOptions(dom)...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open knowledge: %w", err)
+		return nil, nil, nil, fmt.Errorf("open knowledge: %w", err)
 	}
 
 	// Note: the knowledge base is our own cortexdb (knowledge_search tool), so we
@@ -169,21 +183,21 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 		Build()
 	if err != nil {
 		store.Close()
-		return nil, nil, fmt.Errorf("build agent: %w", err)
+		return nil, nil, nil, fmt.Errorf("build agent: %w", err)
 	}
 
 	filter, err := safety.NewFromSpecs(dom.RedLines)
 	if err != nil {
 		svc.Close()
 		store.Close()
-		return nil, nil, fmt.Errorf("compile red-lines: %w", err)
+		return nil, nil, nil, fmt.Errorf("compile red-lines: %w", err)
 	}
 	registerProbes(svc, dom.Probes, filter)
 	registerKnowledgeSearch(svc, store)
 	registerGraphWalk(svc, store, dom.RelationTypes)
 	registerSafetyLint(svc, filter)
 	registerSuggestAction(svc, filter)
-	return svc, store, nil
+	return svc, store, llm, nil
 }
 
 // SuggestActionToolName is the tool the agent calls to propose a state-changing

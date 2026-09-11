@@ -39,7 +39,7 @@ import (
 	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
-const version = "opsdoctor 0.41.0"
+const version = "opsdoctor 0.42.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -107,7 +107,7 @@ func runAsk(q string) {
 	if cfg.LLMAPIKey == "" {
 		fail("set OPSDOCTOR_LLM_API_KEY (frontier model API key)")
 	}
-	svc, store, err := agents.Build(cfg, loadDomain(cfg))
+	svc, store, _, err := agents.Build(cfg, loadDomain(cfg))
 	if err != nil {
 		fail("build agent: %v", err)
 	}
@@ -538,7 +538,7 @@ func runServe(openUI bool) {
 	var store *knowledge.Store
 	var err error
 	if cfg.LLMAPIKey != "" {
-		svc, store, err = agents.Build(cfg, dom)
+		svc, store, _, err = agents.Build(cfg, dom)
 		if err != nil {
 			fail("build agent: %v", err)
 		}
@@ -617,7 +617,7 @@ func runChat() {
 	if cfg.LLMAPIKey == "" {
 		fail("set OPSDOCTOR_LLM_API_KEY (frontier model API key)")
 	}
-	svc, store, err := agents.Build(cfg, loadDomain(cfg))
+	svc, store, _, err := agents.Build(cfg, loadDomain(cfg))
 	if err != nil {
 		fail("build agent: %v", err)
 	}
@@ -690,7 +690,7 @@ func runAnalyzeLog(path string) {
 		return
 	}
 
-	svc, store, err := agents.Build(cfg, dom)
+	svc, store, _, err := agents.Build(cfg, dom)
 	if err != nil {
 		fail("build agent: %v", err)
 	}

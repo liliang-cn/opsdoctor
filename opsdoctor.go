@@ -22,6 +22,7 @@ package opsdoctor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -133,6 +134,14 @@ type Agent struct {
 	extract knowledge.DocumentExtractor // graph extractor for ingest (nil ⇒ vectors only)
 	mcp     []*mcp.Client
 	mcpStat []MCPStatus
+	// llm is the indirection the running model is changed through. See
+	// SetLLM, and internal/agents/swappable.go for why it exists.
+	llm *agents.SwappableLLM
+	// llmAPIKey is the key in force. Kept so SetLLM can change a base URL or a
+	// model without the caller having to resend the credential — a settings
+	// form that demands the key back on every edit is a form that gets the key
+	// pasted into it, and then into a log, once a week.
+	llmAPIKey string
 	// embBaseURL is kept for Doctor, whose first check is whether a proxy sits
 	// in front of this endpoint.
 	embBaseURL string
@@ -186,7 +195,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 
-	svc, store, err := agents.Build(c, dom)
+	svc, store, llm, err := agents.Build(c, dom)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +213,7 @@ func New(cfg Config) (*Agent, error) {
 		return nil, err
 	}
 	a := &Agent{svc: svc, store: store, dom: dom, filter: filter, extract: ex,
-		embBaseURL: c.EmbBaseURL}
+		llm: llm, embBaseURL: c.EmbBaseURL, llmAPIKey: c.LLMAPIKey}
 
 	// Mount any external MCP servers. This never fails New: unreachable servers are
 	// recorded in mcpStat and skipped, leaving a knowledge-only agent.
@@ -226,6 +235,64 @@ func New(cfg Config) (*Agent, error) {
 	}
 
 	return a, nil
+}
+
+// LLMSettings is the model the agent generates with, as an operator sees it.
+// The API key is never part of it — see Agent.llmAPIKey.
+type LLMSettings struct {
+	BaseURL string `json:"baseUrl"`
+	Model   string `json:"model"`
+}
+
+// LLM reports the model in force right now.
+func (a *Agent) LLM() LLMSettings {
+	d := a.llm.Desc()
+	return LLMSettings{BaseURL: d.BaseURL, Model: d.Model}
+}
+
+// SetLLM changes the model the agent generates with, without a restart.
+//
+// This exists because restarting is not a neutral act everywhere it runs: in
+// SDS the agent is a unit in a drbd-reactor promoter's start list, so
+// restarting it to pick up a new model name demotes the resource and fails the
+// whole control plane over to another node. A model change should not cost an
+// outage.
+//
+// An empty field keeps the current value, which is what makes "switch the model
+// but keep the gateway" a one-field edit and, more importantly, means a caller
+// changing the model never has to resend the API key.
+//
+// The new provider is built and only then swapped in, so a configuration that
+// cannot be constructed leaves the working one running. What this CANNOT do is
+// prove the endpoint answers — that takes a request, and a settings call is the
+// wrong place to spend one. Callers that want certainty should ask a question
+// afterwards; the swap is reported as done, not as verified.
+//
+// In-flight requests finish on the provider they started with.
+func (a *Agent) SetLLM(s LLMSettings, apiKey string) (LLMSettings, error) {
+	cur := a.llm.Desc()
+	next := agents.LLMDesc{BaseURL: cur.BaseURL, Model: cur.Model}
+	if v := strings.TrimSpace(s.BaseURL); v != "" {
+		next.BaseURL = v
+	}
+	if v := strings.TrimSpace(s.Model); v != "" {
+		next.Model = v
+	}
+	key := a.llmAPIKey
+	if v := strings.TrimSpace(apiKey); v != "" {
+		key = v
+	}
+	if next.Model == "" {
+		return LLMSettings{}, errors.New("set a model: an agent with no model name cannot generate")
+	}
+
+	provider, err := agents.NewLLMProvider(next.BaseURL, key, next.Model)
+	if err != nil {
+		return LLMSettings{}, fmt.Errorf("build llm %s on %s: %w", next.Model, next.BaseURL, err)
+	}
+	prev := a.llm.Swap(provider, next)
+	a.llmAPIKey = key
+	return LLMSettings{BaseURL: prev.BaseURL, Model: prev.Model}, nil
 }
 
 // MCPStatus returns the per-server outcome of mounting the configured MCP servers

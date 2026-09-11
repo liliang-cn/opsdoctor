@@ -4,6 +4,49 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.42.0 — 2026-09-11
+
+The model can change without a restart.
+
+`Agent.SetLLM` swaps the generator on a running agent; `Agent.LLM` reports what
+is in force. Nothing else about the agent is rebuilt — the session store, the
+knowledge index, the mounted MCP servers and the tool registry all keep running,
+and requests already in flight finish on the provider they started with.
+
+This is not a convenience. Where opsdoctor is embedded in SDS, the agent is a
+unit in a drbd-reactor promoter's start list: restarting it to pick up a new
+model name demotes the DRBD resource and fails the entire control plane over to
+another node. Changing a model should not cost an outage, and until now it did.
+
+The seam is `internal/agents.SwappableLLM`. agent-go keeps its generator in a
+bare field read from twenty-odd places, unlocked — correct while it never
+changes, a data race the moment it does; the one field agent-go does let you
+swap (memory) carries a mutex and an accessor for exactly that reason. Doing the
+same for the generator would mean editing every one of those reads upstream,
+releasing agent-go, then releasing this. But `domain.Generator` is an interface,
+so agent-go is handed the wrapper — forever — and what it delegates to changes
+underneath, behind one lock.
+
+One trap the wrapper has to answer for: agent-go discovers native web-search
+support by type-asserting the concrete provider. A wrapper hides that, and web
+search would have turned off with no error anywhere. `SwappableLLM` implements
+`NativeWebSearchReporter` and forwards, returning the same "no evidence either
+way" the caller already falls back to when the provider underneath cannot
+report. There is a test for it.
+
+Deliberately not swappable: the embedder. An index is built with one embedder at
+one dimension and can only be queried by that same embedder — changing it does
+not reconfigure the index, it invalidates it. That is a property of the data, not
+a setting.
+
+An empty field in `LLMSettings` keeps the current value, so changing a model
+never requires resending the API key; a key is only replaced when one is sent.
+`LLMSettings` carries no key at all, because it is what a status endpoint
+returns. The new provider is built before the old one is dropped, so a
+configuration that cannot be constructed leaves the working one running — but a
+swap is reported as done, not as verified: proving an endpoint answers takes a
+request, and a settings call is the wrong place to spend one.
+
 ## v0.41.0 — 2026-09-06
 
 The hold that justified the alchemy integration could not fire.

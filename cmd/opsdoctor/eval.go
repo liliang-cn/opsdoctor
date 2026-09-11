@@ -63,7 +63,7 @@ func runEval(args []string) {
 
 	cfg := config.Load()
 	dom := loadDomain(cfg)
-	svc, store, err := agents.Build(cfg, dom)
+	svc, store, _, err := agents.Build(cfg, dom)
 	if err != nil {
 		fail("build agent: %v", err)
 	}
