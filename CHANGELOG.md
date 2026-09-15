@@ -4,6 +4,54 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.43.0 — 2026-09-15
+
+Dependencies. No API of this module changed; what changed is what the two
+libraries underneath it do with the same calls.
+
+alchemy v0.4.0 → v0.7.7. Three of its fixes reach this code:
+
+  - Chunk boundaries no longer cut a word in half (v0.7.1). Every prose
+    extraction this module runs is chunked by alchemy, and a chunk that ended
+    mid-word gave the model half a term to name an entity from.
+  - A replace deleted the old graph before it knew the new one would land.
+    `opsdoctor refresh` is exactly that shape — purge one source, re-import it
+    — and a failure in between left the source with no graph at all.
+  - Undeclared attributes are named rather than dropped in silence. This is
+    inert here today: the ontology `OntologyFor` renders declares no attributes
+    on any entity type, and alchemy reads a type that declares none as
+    constraining none. It becomes live the day domain.toml grows attributes.
+
+`alchemy.Relation` gained a `Key` — the producer's own name for an edge, which
+is what keeps two parallel edges from reading as one edge described twice. It
+is deliberately not set here. Empty is what a producer that cannot tell its
+edges apart states, and a model reading prose is precisely that producer;
+inventing a key would be an inference wearing a producer's badge.
+
+cortexdb v2.98.0 → v2.110.0. What matters here:
+
+  - Naming an object no longer erases what is known about it (2.100). An
+    entity upsert overwrote the rest of the record.
+  - A strict ontology no longer blocks embedder-backed `SaveKnowledge` (2.100).
+  - `RangeSearch` returned opposite things on the two backends, and derived the
+    metric from the sign of a score (2.104).
+  - The uncited-facts sweep failed on any brain that had ingested a document
+    (2.106) — which is every brain in use.
+  - Three tools were published in the catalogue and reachable through none of
+    the ports (2.106).
+  - Deleting a document's graph is one transaction (2.108). It was four, and a
+    failure between any two left edges standing without endpoints.
+
+Two behaviour changes worth knowing rather than fixes: a delete of a graph node
+or edge is now a retraction that keeps history (2.99), so a knowledge-base purge
+no longer removes rows; and the default memory-list limit dropped from 5000 to
+500 (2.101), so a caller that relied on the old ceiling now pages.
+
+Verified beyond the test suite: the existing store opens and reads under
+cortexdb 2.110.0 unchanged — 6048 nodes, 17546 edges, 9683 chunks, the same
+numbers v0.40.0 recorded — and a fresh ingest (a markdown file through the SDS
+domain.toml against a local embeddinggemma) writes its chunk and its vector.
+
 ## v0.42.0 — 2026-09-11
 
 The model can change without a restart.

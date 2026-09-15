@@ -5,8 +5,8 @@ go 1.25.5
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/liliang-cn/agent-go/v3 v3.32.0
-	github.com/liliang-cn/alchemy v0.4.0
-	github.com/liliang-cn/cortexdb/v2 v2.98.0
+	github.com/liliang-cn/alchemy v0.7.7
+	github.com/liliang-cn/cortexdb/v2 v2.110.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -90,7 +90,7 @@ require (
 	github.com/liliang-cn/skills-go v1.9.0 // indirect
 	github.com/mark3labs/mcp-go v1.0.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/openai/openai-go/v3 v3.56.0 // indirect

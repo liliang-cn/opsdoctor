@@ -39,7 +39,7 @@ import (
 	"github.com/liliang-cn/opsdoctor/internal/schemaimport"
 )
 
-const version = "opsdoctor 0.42.0"
+const version = "opsdoctor 0.43.0"
 
 func main() {
 	if len(os.Args) < 2 {
