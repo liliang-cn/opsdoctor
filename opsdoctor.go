@@ -119,6 +119,13 @@ type MCPServerSpec struct {
 	Headers           map[string]string // http/sse optional headers
 	ReadOnly          bool              // when true, mount only read-only tools
 	ReadOnlyToolAllow []string          // explicit allowlist (optional; overrides the name heuristic)
+	// WriteToolAllow names mutating tools to mount on a ReadOnly server as
+	// well: "everything observational, plus these". ReadOnlyToolAllow cannot
+	// say that — setting it replaces the read-only gate with the list, so
+	// granting one write tool through it drops every read tool not also
+	// named. These tools are mounted as mutations: never cached, never run
+	// concurrently.
+	WriteToolAllow []string
 }
 
 // MCPStatus reports the outcome of mounting one MCP server in New.
@@ -229,6 +236,7 @@ func New(cfg Config) (*Agent, error) {
 				Headers:           s.Headers,
 				ReadOnly:          s.ReadOnly,
 				ReadOnlyToolAllow: s.ReadOnlyToolAllow,
+				WriteToolAllow:    s.WriteToolAllow,
 			}
 		}
 		a.mcp, a.mcpStat = agents.MountMCP(context.Background(), svc, specs)

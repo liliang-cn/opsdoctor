@@ -4,6 +4,14 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.45.0 — 2026-09-25
+
+`MCPServerSpec.WriteToolAllow` mounts named mutating tools on a ReadOnly
+server: everything observational, plus these. `ReadOnlyToolAllow` could not
+say that — setting it replaces the read-only gate with the list, so granting a
+single write tool through it dropped every read tool that was not also named.
+Granted tools are mounted as mutations: never cached, never run concurrently.
+
 ## v0.44.0 — 2026-09-25
 
 Dependencies. No API of this module changed.

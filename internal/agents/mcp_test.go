@@ -365,3 +365,44 @@ func TestAdmitToolHandlesAMissingTool(t *testing.T) {
 		t.Error("a nil tool should fall through to the name heuristic")
 	}
 }
+
+// TestMountMCPWriteToolAllow mounts a read-only server with one named write
+// tool granted: the read tool and that write tool are mounted, the other write
+// tool is still refused. ReadOnlyToolAllow could not express this — naming the
+// write tool there would have dropped widget_list.
+func TestMountMCPWriteToolAllow(t *testing.T) {
+	srv := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "test-sds", Version: "0.0.1"}, nil)
+	objectSchema := map[string]interface{}{"type": "object"}
+	for _, name := range []string{"widget_list", "widget_create", "widget_delete"} {
+		reply := name
+		srv.AddTool(&sdkmcp.Tool{Name: name, Description: name, InputSchema: objectSchema},
+			func(ctx context.Context, _ *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+				return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: reply}}}, nil
+			})
+	}
+	ts := httptest.NewServer(sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return srv }, nil))
+	t.Cleanup(func() {
+		ts.CloseClientConnections()
+		ts.Close()
+	})
+
+	svc := newTestService(t)
+	defer svc.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	clients, statuses := MountMCP(ctx, svc, []MCPSpec{{
+		Name: "sds", Transport: "http", URL: ts.URL,
+		ReadOnly: true, WriteToolAllow: []string{"widget_create"},
+	}})
+	t.Cleanup(func() {
+		for _, c := range clients {
+			_ = c.Close()
+		}
+	})
+	st := statuses[0]
+	if !st.Connected || st.Tools != 2 || st.Skipped != 1 {
+		t.Fatalf("connected=%v tools=%d skipped=%d err=%q, want 2 mounted (list, create) and 1 skipped (delete)",
+			st.Connected, st.Tools, st.Skipped, st.Err)
+	}
+}

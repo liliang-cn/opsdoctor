@@ -29,6 +29,7 @@ type MCPSpec struct {
 	Headers           map[string]string
 	ReadOnly          bool
 	ReadOnlyToolAllow []string
+	WriteToolAllow    []string // mutating tools mounted despite ReadOnly
 }
 
 // MCPMountStatus reports the outcome of mounting one MCP server.
@@ -79,6 +80,11 @@ func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec) ([]*mcp.
 		clients = append(clients, client)
 
 		for name, tool := range client.GetTools() {
+			if spec.ReadOnly && namedIn(name, spec.WriteToolAllow) {
+				registerMCPTool(svc, client, spec.Name, name, tool, false, cache)
+				st.Tools++
+				continue
+			}
 			if spec.ReadOnly && !readOnlyAdmitTool(name, tool, spec.ReadOnlyToolAllow) {
 				st.Skipped++
 				continue
@@ -90,6 +96,15 @@ func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec) ([]*mcp.
 	}
 
 	return clients, statuses
+}
+
+func namedIn(name string, list []string) bool {
+	for _, n := range list {
+		if strings.EqualFold(strings.TrimSpace(n), name) {
+			return true
+		}
+	}
+	return false
 }
 
 // serverConfig translates a spec into an agent-go mcp.ServerConfig.
