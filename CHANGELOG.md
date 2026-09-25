@@ -4,6 +4,14 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.46.0 — 2026-09-25
+
+An answer that lists its own sources no longer gets a second list. The check
+only recognised a bold or heading "Sources"; a model writing a plain
+"Sources:" line — which it does as often as not — got the footer appended
+underneath, and the reader saw the same citations twice. Any line that is only
+a sources heading now counts, in any markdown form, including 来源 / 参考来源.
+
 ## v0.45.0 — 2026-09-25
 
 `MCPServerSpec.WriteToolAllow` mounts named mutating tools on a ReadOnly

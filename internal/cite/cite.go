@@ -71,10 +71,22 @@ func Label(source string) string {
 	return out
 }
 
-// hasOwnSources reports whether the answer already contains its own Sources section.
+// hasOwnSources reports whether the answer already contains its own Sources
+// section: a line that is only a sources heading, in whatever markdown dress —
+// "Sources:", "**Sources**", "## Sources", "来源：". Matching only the bold and
+// heading forms missed the plain "Sources:" a model writes as often as not, and
+// the answer then carried two lists of the same sources.
 func hasOwnSources(answer string) bool {
-	return strings.Contains(strings.ToLower(answer), "sources") &&
-		(strings.Contains(answer, "**Sources") || strings.Contains(answer, "# Sources") || strings.Contains(answer, "## Sources"))
+	for _, line := range strings.Split(answer, "\n") {
+		t := strings.TrimSpace(line)
+		t = strings.TrimLeft(t, "#*_ ")
+		t = strings.TrimRight(t, "*_:： ")
+		switch strings.ToLower(t) {
+		case "sources", "source", "references", "来源", "参考来源", "参考资料", "引用来源":
+			return true
+		}
+	}
+	return false
 }
 
 // Footer renders a markdown "Sources" section for the sources the answer
