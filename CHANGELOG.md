@@ -4,6 +4,22 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.44.0 — 2026-09-25
+
+Dependencies. No API of this module changed.
+
+cortexdb v2.110.0 → v2.111.1. The knowledge store now checkpoints SQLite's
+write-ahead log itself, every 30 seconds with TRUNCATE. Before, nothing did:
+the store's connection pool always had a reader in flight during an ingest, so
+SQLite's automatic checkpoint gave up every time and the `-wal` file grew
+until the disk was full — 11 GB against a 636 MB database on one Athanor host.
+A long knowledge-base refresh here was exposed to the same thing. v2.111.0 is
+skipped on purpose: its checkpointer raced when a store was initialised twice.
+
+agent-go v3.32.0 → v3.33.0. Adds `UnlimitedRounds` (-1) as an explicit "no
+round budget". This module always passes a positive budget, so its runs stop
+where they did before.
+
 ## v0.43.0 — 2026-09-15
 
 Dependencies. No API of this module changed; what changed is what the two
