@@ -8,6 +8,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -161,6 +162,21 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 		StoreOptions(dom)...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open knowledge: %w", err)
+	}
+	for _, path := range cfg.SharedKnowledgeDBPaths {
+		// A shared base is installed, never created here: a path with no
+		// file behind it is a deployment mistake, and opening would quietly
+		// make an empty base in its place.
+		if _, err := os.Stat(path); err != nil {
+			store.Close()
+			return nil, nil, nil, fmt.Errorf("shared knowledge %s: %w", path, err)
+		}
+		sh, err := knowledge.Open(path, cfg.EmbBaseURL, cfg.EmbAPIKey, cfg.EmbModel, cfg.EmbDim, StoreOptions(dom)...)
+		if err != nil {
+			store.Close()
+			return nil, nil, nil, fmt.Errorf("open shared knowledge %s: %w", path, err)
+		}
+		store.AttachShared(sh)
 	}
 
 	// Note: the knowledge base is our own cortexdb (knowledge_search tool), so we

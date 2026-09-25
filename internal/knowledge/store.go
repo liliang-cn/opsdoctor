@@ -226,6 +226,10 @@ type Store struct {
 	// not reported as the extracting model's invention. See ontology.go.
 	importedEntityTypes   []string
 	importedRelationTypes []string
+
+	// shared are read-only knowledge bases consulted alongside this one; see
+	// shared.go. This store stays the only one anything is written to.
+	shared []*Store
 }
 
 // Option customizes a Store at Open time.
@@ -342,7 +346,12 @@ func Open(dbPath, embBaseURL, embAPIKey, embModel string, embDim int, opts ...Op
 }
 
 // Close releases the database.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	for _, sh := range s.shared {
+		_ = sh.Close()
+	}
+	return s.db.Close()
+}
 
 // IngestDoc ingests one document into the GraphRAG store.
 func (s *Store) IngestDoc(ctx context.Context, id, title, content string) error {
@@ -437,7 +446,7 @@ const (
 // edges from the retrieved nodes, returning the hits plus their graph neighbors
 // (deduped, seed-excluded, capped). Doc/blog chunks that aren't graph nodes
 // simply contribute no neighbors.
-func (s *Store) SearchGraph(ctx context.Context, query string, topK int) (*GraphResult, error) {
+func (s *Store) searchGraphLocal(ctx context.Context, query string, topK int) (*GraphResult, error) {
 	if topK <= 0 {
 		topK = 6
 	}

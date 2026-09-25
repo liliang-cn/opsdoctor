@@ -4,6 +4,25 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.47.0 — 2026-09-25
+
+Shared knowledge bases. `SharedKnowledgeDBPaths`
+(`OPSDOCTOR_SHARED_KNOWLEDGE_DBS`, comma-separated) attaches read-only bases
+that retrieval and graph walks consult alongside the knowledge base: knowledge
+that is the same everywhere a product runs — its docs, its code graph, the
+reference of the CLI it ships — built once and installed as a file.
+
+Built deployment by deployment, two installations of the same product ended up
+with bases that shared almost nothing: one had the DRBD manuals and none of the
+product's own documentation, the other the reverse.
+
+  - `SearchGraph` merges hits from every base by score, each chunk once.
+  - `Walk` resolves the starting entity in every base and walks from the best
+    match; on a tie the local base wins.
+  - Writes — ingest, purge, resolve — only ever touch the local base.
+  - A shared path with no file behind it is an error at startup rather than a
+    new empty base.
+
 ## v0.46.0 — 2026-09-25
 
 An answer that lists its own sources no longer gets a second list. The check

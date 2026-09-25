@@ -79,7 +79,7 @@ const spellingCandidates = 8
 //
 // relation may be empty, in which case every edge type in the domain's
 // vocabulary is followed. direction defaults to WalkBoth.
-func (s *Store) Walk(ctx context.Context, name, relation, direction string) (*WalkResult, error) {
+func (s *Store) walkLocal(ctx context.Context, name, relation, direction string) (*WalkResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("walk needs a starting entity name")

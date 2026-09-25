@@ -25,6 +25,10 @@ type Config struct {
 	// Knowledge base (GraphRAG over the active domain's material).
 	KnowledgeDBPath string
 	EmbDim          int
+	// SharedKnowledgeDBPaths are read-only bases searched alongside the
+	// knowledge base: knowledge that is the same everywhere the product runs,
+	// built once and installed as a file. Comma-separated in the environment.
+	SharedKnowledgeDBPaths []string
 
 	// Path to the active domain config (domain.toml). Each project supplies its own.
 	DomainFile string
@@ -46,19 +50,20 @@ func Load() Config {
 	llmBase := env("OPSDOCTOR_LLM_BASE_URL", "https://api.openai.com/v1")
 	llmKey := Getenv("OPSDOCTOR_LLM_API_KEY")
 	return Config{
-		LLMBaseURL:      llmBase,
-		LLMAPIKey:       llmKey,
-		LLMModel:        env("OPSDOCTOR_LLM_MODEL", "gpt-4o"),
-		EmbBaseURL:      env("OPSDOCTOR_EMB_BASE_URL", llmBase),
-		EmbAPIKey:       env("OPSDOCTOR_EMB_API_KEY", llmKey),
-		EmbModel:        env("OPSDOCTOR_EMB_MODEL", "text-embedding-3-small"),
-		DBPath:          env("OPSDOCTOR_DB_PATH", "./data/opsdoctor.db"),
-		KnowledgeDBPath: env("OPSDOCTOR_KNOWLEDGE_DB_PATH", "./data/knowledge.db"),
-		EmbDim:          envInt("OPSDOCTOR_EMB_DIM", 1536),
-		DomainFile:      env("OPSDOCTOR_DOMAIN_FILE", "./domain.toml"),
-		AlchemyAddr:     Getenv("OPSDOCTOR_ALCHEMY_ADDR"),
-		AlchemyToken:    Getenv("OPSDOCTOR_ALCHEMY_TOKEN"),
-		AlchemyTLS:      envBool("OPSDOCTOR_ALCHEMY_TLS"),
+		LLMBaseURL:             llmBase,
+		LLMAPIKey:              llmKey,
+		LLMModel:               env("OPSDOCTOR_LLM_MODEL", "gpt-4o"),
+		EmbBaseURL:             env("OPSDOCTOR_EMB_BASE_URL", llmBase),
+		EmbAPIKey:              env("OPSDOCTOR_EMB_API_KEY", llmKey),
+		EmbModel:               env("OPSDOCTOR_EMB_MODEL", "text-embedding-3-small"),
+		DBPath:                 env("OPSDOCTOR_DB_PATH", "./data/opsdoctor.db"),
+		KnowledgeDBPath:        env("OPSDOCTOR_KNOWLEDGE_DB_PATH", "./data/knowledge.db"),
+		EmbDim:                 envInt("OPSDOCTOR_EMB_DIM", 1536),
+		SharedKnowledgeDBPaths: splitList(Getenv("OPSDOCTOR_SHARED_KNOWLEDGE_DBS")),
+		DomainFile:             env("OPSDOCTOR_DOMAIN_FILE", "./domain.toml"),
+		AlchemyAddr:            Getenv("OPSDOCTOR_ALCHEMY_ADDR"),
+		AlchemyToken:           Getenv("OPSDOCTOR_ALCHEMY_TOKEN"),
+		AlchemyTLS:             envBool("OPSDOCTOR_ALCHEMY_TLS"),
 	}
 }
 
@@ -105,4 +110,15 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// splitList splits a comma-separated setting, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

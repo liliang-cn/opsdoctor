@@ -86,7 +86,11 @@ type Config struct {
 	EmbDim     int    // OPSDOCTOR_EMB_DIM (default 1536) — must match the index
 
 	KnowledgeDBPath string // OPSDOCTOR_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
-	SessionDBPath   string // OPSDOCTOR_DB_PATH (default ./data/opsdoctor.db)
+	// SharedKnowledgeDBPaths are read-only knowledge bases searched alongside
+	// KnowledgeDBPath — product knowledge built once and installed as a file.
+	// OPSDOCTOR_SHARED_KNOWLEDGE_DBS (comma-separated). Nothing is written to them.
+	SharedKnowledgeDBPaths []string
+	SessionDBPath          string // OPSDOCTOR_DB_PATH (default ./data/opsdoctor.db)
 
 	// alchemy, the extraction service. With an address, Ingest reads prose
 	// through alchemy: every node and edge carries provenance, and a
@@ -180,6 +184,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.EmbDim != 0 {
 		c.EmbDim = cfg.EmbDim
+	}
+	if len(cfg.SharedKnowledgeDBPaths) > 0 {
+		c.SharedKnowledgeDBPaths = cfg.SharedKnowledgeDBPaths
 	}
 	if cfg.KnowledgeDBPath != "" {
 		c.KnowledgeDBPath = cfg.KnowledgeDBPath
