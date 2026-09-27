@@ -27,6 +27,8 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/liliang-cn/agent-go/v3/pkg/agent"
 	"github.com/liliang-cn/agent-go/v3/pkg/mcp"
@@ -111,6 +113,14 @@ type Config struct {
 	// outcome with Agent.MCPStatus. Mark a spec ReadOnly to mount only its
 	// observational tools — the safe default for cluster-control servers.
 	MCPServers []MCPServerSpec
+
+	// ApproveWrites holds every mutating MCP tool call for an operator's
+	// decision. Stream surfaces the call as an EventApproval and waits for
+	// Decide; a call rejected, left undecided past ApprovalTimeout, or made
+	// outside Stream is not executed, and the agent is told so.
+	ApproveWrites bool
+	// ApprovalTimeout bounds the wait (default DefaultApprovalTimeout).
+	ApprovalTimeout time.Duration
 }
 
 // MCPServerSpec configures one external MCP server to mount into the agent.
@@ -156,6 +166,8 @@ type Agent struct {
 	// embBaseURL is kept for Doctor, whose first check is whether a proxy sits
 	// in front of this endpoint.
 	embBaseURL string
+	// approvals holds write calls waiting for Decide; nil unless ApproveWrites.
+	approvals *approvalBook
 }
 
 // LoadDomain reads a domain.toml from disk.
@@ -246,7 +258,12 @@ func New(cfg Config) (*Agent, error) {
 				WriteToolAllow:    s.WriteToolAllow,
 			}
 		}
-		a.mcp, a.mcpStat = agents.MountMCP(context.Background(), svc, specs)
+		var gate agents.WriteGate
+		if cfg.ApproveWrites {
+			a.approvals = newApprovalBook(cfg.ApprovalTimeout)
+			gate = a.approvals.gate
+		}
+		a.mcp, a.mcpStat = agents.MountMCP(context.Background(), svc, specs, gate)
 	}
 
 	return a, nil
@@ -515,6 +532,7 @@ const (
 	EventReset      EventKind = "reset"       // discard answer text emitted so far (a preamble)
 	EventError      EventKind = "error"       // Text is a non-fatal error message
 	EventSuggestion EventKind = "suggestion"  // Suggestion: a structured, non-executed action proposal
+	EventApproval   EventKind = "approval"    // Approval: a write tool call waiting for Decide
 )
 
 // Suggestion is a structured, NON-executed action the agent proposes for an
@@ -538,6 +556,7 @@ type Event struct {
 	Tool       string
 	Args       map[string]any
 	Suggestion *Suggestion // set only for EventSuggestion
+	Approval   *Approval   // set only for EventApproval
 }
 
 // Stream runs a question in the conversation identified by sessionID and
@@ -561,6 +580,23 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 	dbg := debugEnabled()
 	if dbg {
 		log.Printf("[opsdoctor] ▶ turn start: session=%q question=%q (maxToolRounds=%d, mcp_servers=%d)", sessionID, truncate(question, 300), maxToolRounds, len(a.mcp))
+	}
+	// Approvals are emitted from the tool call, on the agent's goroutine, while
+	// this one is emitting everything else: callers get one event at a time.
+	var onMu sync.Mutex
+	emit := on
+	on = func(e Event) {
+		onMu.Lock()
+		defer onMu.Unlock()
+		emit(e)
+	}
+	if a.approvals != nil {
+		ctx = withApprover(ctx, func(ap Approval) {
+			if dbg {
+				log.Printf("[opsdoctor]   ⏸ approval %s: %s args=%s", ap.ID, ap.Tool, jsonCompact(ap.Args))
+			}
+			on(Event{Kind: EventApproval, Tool: ap.Tool, Args: ap.Args, Approval: &ap})
+		})
 	}
 	opts := []agent.RunOption{agent.WithMaxTurns(maxToolRounds)}
 	if sessionID != "" {

@@ -4,6 +4,26 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.48.0 — 2026-09-27
+
+Operator approval for write tools. With `ApproveWrites`, every mutating MCP
+tool call — one granted through `WriteToolAllow`, or a mutating tool on a
+server mounted whole — is held before it reaches the server. `Stream` emits it
+as an `EventApproval` carrying an id and the exact arguments; `Agent.Decide`
+runs it or rejects it.
+
+Granting a write tool used to mean the agent ran it the moment it chose to,
+with arguments nobody saw until the change had been made.
+
+  - Rejected, undecided past `ApprovalTimeout` (default 10 minutes), or cut
+    off by the stream ending: the call is not executed and the agent is told
+    so, as a tool result it can answer from, not an error that ends the turn.
+  - Outside `Stream` (`Ask`, `Chat`) there is nobody to ask, so gated calls
+    are refused outright.
+  - A second decision on the same call is refused (`ErrNoSuchApproval`).
+  - `Stream` now delivers events one at a time: approvals come from the tool
+    call's goroutine, everything else from the stream's.
+
 ## v0.47.0 — 2026-09-25
 
 Shared knowledge bases. `SharedKnowledgeDBPaths`

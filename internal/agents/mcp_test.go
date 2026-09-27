@@ -124,7 +124,7 @@ func TestMountMCPReadOnly(t *testing.T) {
 		Transport: "http",
 		URL:       ts.URL,
 		ReadOnly:  true,
-	}})
+	}}, nil)
 	// Registered after MountMCP, so (LIFO) it runs FIRST — clients close before the
 	// server tears down.
 	t.Cleanup(func() {
@@ -174,7 +174,7 @@ func TestMountMCPUnreachableDegrades(t *testing.T) {
 		Transport: "http",
 		URL:       "http://127.0.0.1:1/mcp", // nothing listening
 		ReadOnly:  true,
-	}})
+	}}, nil)
 	for _, c := range clients {
 		_ = c.Close()
 	}
@@ -394,7 +394,7 @@ func TestMountMCPWriteToolAllow(t *testing.T) {
 	clients, statuses := MountMCP(ctx, svc, []MCPSpec{{
 		Name: "sds", Transport: "http", URL: ts.URL,
 		ReadOnly: true, WriteToolAllow: []string{"widget_create"},
-	}})
+	}}, nil)
 	t.Cleanup(func() {
 		for _, c := range clients {
 			_ = c.Close()

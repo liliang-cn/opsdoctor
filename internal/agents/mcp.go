@@ -32,6 +32,11 @@ type MCPSpec struct {
 	WriteToolAllow    []string // mutating tools mounted despite ReadOnly
 }
 
+// WriteGate decides whether one mutating tool call may run. It is consulted
+// before the call reaches the MCP server; a call it refuses is not executed,
+// and reason is what the agent is told instead of a result.
+type WriteGate func(ctx context.Context, server, tool string, args map[string]interface{}) (approved bool, reason string)
+
 // MCPMountStatus reports the outcome of mounting one MCP server.
 type MCPMountStatus struct {
 	Name      string // logical server name
@@ -48,8 +53,9 @@ const mcpConnectTimeout = 30 * time.Second
 // MountMCP connects each spec's MCP server and registers its (read-only) tools
 // into svc. It never returns an error: a server that fails to connect is recorded
 // in the returned status slice and skipped, so the agent degrades to knowledge-only.
-// Callers must Close every returned client.
-func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec) ([]*mcp.Client, []MCPMountStatus) {
+// Callers must Close every returned client. A non-nil gate is consulted before
+// every mutating tool call.
+func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec, gate WriteGate) ([]*mcp.Client, []MCPMountStatus) {
 	var clients []*mcp.Client
 	var statuses []MCPMountStatus
 	// One cache across every server: the key carries the tool name, and two
@@ -81,7 +87,7 @@ func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec) ([]*mcp.
 
 		for name, tool := range client.GetTools() {
 			if spec.ReadOnly && namedIn(name, spec.WriteToolAllow) {
-				registerMCPTool(svc, client, spec.Name, name, tool, false, cache)
+				registerMCPTool(svc, client, spec.Name, name, tool, false, cache, gate)
 				st.Tools++
 				continue
 			}
@@ -89,7 +95,14 @@ func MountMCP(ctx context.Context, svc *agent.Service, specs []MCPSpec) ([]*mcp.
 				st.Skipped++
 				continue
 			}
-			registerMCPTool(svc, client, spec.Name, name, tool, spec.ReadOnly, cache)
+			// On a server mounted whole, only the tools that look mutating are
+			// gated: asking an operator to approve a status read is how an
+			// approval prompt becomes one people click through unread.
+			var g WriteGate
+			if !spec.ReadOnly && !readOnlyAdmitTool(name, tool, spec.ReadOnlyToolAllow) {
+				g = gate
+			}
+			registerMCPTool(svc, client, spec.Name, name, tool, spec.ReadOnly, cache, g)
 			st.Tools++
 		}
 		statuses = append(statuses, st)
@@ -133,27 +146,12 @@ func serverConfig(spec MCPSpec) *mcp.ServerConfig {
 // registerMCPTool exposes one MCP tool as an agent tool. The handler forwards the
 // call to the MCP server via CallTool; results and errors are returned as plain
 // JSON-safe maps so the existing Stream event path surfaces them unchanged.
-func registerMCPTool(svc *agent.Service, client *mcp.Client, server, name string, tool *sdkmcp.Tool, readOnly bool, cache *toolCache) {
+func registerMCPTool(svc *agent.Service, client *mcp.Client, server, name string, tool *sdkmcp.Tool, readOnly bool, cache *toolCache, gate WriteGate) {
 	desc := tool.Description
 	if desc == "" {
 		desc = fmt.Sprintf("Tool %q exposed by MCP server %q.", name, server)
 	}
-	call := name // capture per-iteration
-	c := client
-	handler := func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-		res, err := c.CallTool(ctx, call, args)
-		if err != nil {
-			return map[string]interface{}{"ok": false, "error": err.Error()}, nil
-		}
-		if res != nil && !res.Success {
-			return map[string]interface{}{"ok": false, "error": res.Error}, nil
-		}
-		var data interface{}
-		if res != nil {
-			data = res.Data
-		}
-		return map[string]interface{}{"ok": true, "data": data}, nil
-	}
+	handler := mcpToolHandler(client, server, name, gate)
 	// Flag read-only tools explicitly. agent-go's name heuristic doesn't treat
 	// e.g. "*_status" as read-only, so without this a duplicate status poll would
 	// be re-executed instead of collapsed. A ReadOnly tool is also concurrency-safe.
@@ -168,6 +166,36 @@ func registerMCPTool(svc *agent.Service, client *mcp.Client, server, name string
 		return
 	}
 	svc.AddTool(name, desc, toParams(tool.InputSchema), handler)
+}
+
+// toolCaller is the part of an MCP client a tool handler uses.
+type toolCaller interface {
+	CallTool(ctx context.Context, toolName string, arguments map[string]interface{}) (*mcp.ToolResult, error)
+}
+
+// mcpToolHandler forwards one tool to its MCP server, through gate when set: a
+// call the gate refuses never reaches the server, and the agent gets the
+// gate's reason in place of a result.
+func mcpToolHandler(c toolCaller, server, call string, gate WriteGate) func(context.Context, map[string]interface{}) (interface{}, error) {
+	return func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+		if gate != nil {
+			if ok, reason := gate(ctx, server, call, args); !ok {
+				return map[string]interface{}{"ok": false, "executed": false, "error": reason}, nil
+			}
+		}
+		res, err := c.CallTool(ctx, call, args)
+		if err != nil {
+			return map[string]interface{}{"ok": false, "error": err.Error()}, nil
+		}
+		if res != nil && !res.Success {
+			return map[string]interface{}{"ok": false, "error": res.Error}, nil
+		}
+		var data interface{}
+		if res != nil {
+			data = res.Data
+		}
+		return map[string]interface{}{"ok": true, "data": data}, nil
+	}
 }
 
 // readOnlyAdmitTool decides whether a tool may be mounted under ReadOnly,
