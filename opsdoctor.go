@@ -533,6 +533,7 @@ const (
 	EventError      EventKind = "error"       // Text is a non-fatal error message
 	EventSuggestion EventKind = "suggestion"  // Suggestion: a structured, non-executed action proposal
 	EventApproval   EventKind = "approval"    // Approval: a write tool call waiting for Decide
+	EventOutcome    EventKind = "outcome"     // Outcome: how the turn ended — done, or blocked and why
 )
 
 // Suggestion is a structured, NON-executed action the agent proposes for an
@@ -557,6 +558,7 @@ type Event struct {
 	Args       map[string]any
 	Suggestion *Suggestion // set only for EventSuggestion
 	Approval   *Approval   // set only for EventApproval
+	Outcome    *Outcome    // set only for EventOutcome
 }
 
 // Stream runs a question in the conversation identified by sessionID and
@@ -612,6 +614,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 	seen := map[string]bool{}
 	var streamed bool
 	var full, final string
+	var outcome *Outcome
 	var toolCalls, toolResults, partials, suggestions int
 	for ev := range events {
 		switch ev.Type {
@@ -626,10 +629,11 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 				on(Event{Kind: EventText, Text: ev.Content})
 			}
 		case agent.EventTypeToolCall:
-			if ev.ToolName == "task_complete" { // internal answer sentinel
+			if o := outcomeFromCall(ev.ToolName, ev.ToolArgs); o != nil { // internal turn-end sentinels
 				if dbg {
-					log.Printf("[opsdoctor]   ✓ task_complete (model signalled done)")
+					log.Printf("[opsdoctor]   ✓ %s (model ended the turn): %q", ev.ToolName, truncate(o.Text, 160))
 				}
+				outcome = o
 				continue
 			}
 			if ev.ToolName == agents.SuggestActionToolName {
@@ -644,7 +648,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 			}
 			on(Event{Kind: EventToolCall, Tool: ev.ToolName, Args: ev.ToolArgs})
 		case agent.EventTypeToolResult:
-			if ev.ToolName == "task_complete" {
+			if ev.ToolName == "task_complete" || ev.ToolName == "task_blocked" {
 				continue
 			}
 			if ev.ToolName == agents.SuggestActionToolName {
@@ -687,7 +691,27 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 			on(Event{Kind: EventReset})
 		}
 		full = final
+		streamed = true
 		on(Event{Kind: EventText, Text: final})
+	}
+	// Some models write the turn-ending call into the answer instead of
+	// making it — "task_complete{\"result\": ...}" as the last line — and
+	// the operator read it as part of the reply. Take it back out.
+	if body, o := splitWrittenOutcome(full); o != nil {
+		if streamed {
+			on(Event{Kind: EventReset})
+		}
+		full = body
+		if body != "" {
+			on(Event{Kind: EventText, Text: body})
+		}
+		outcome = o
+	}
+	if outcome != nil {
+		if strings.Contains(full, strings.TrimSpace(outcome.Text)) {
+			outcome.Text = "" // the answer already says it
+		}
+		on(Event{Kind: EventOutcome, Outcome: outcome})
 	}
 	if foot := cite.Footer(full, sources); foot != "" {
 		full += foot

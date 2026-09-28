@@ -4,6 +4,18 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.49.0 — 2026-09-28
+
+How a turn ended is now an event of its own. `Stream` emits `EventOutcome`
+with `Status` "complete" or "blocked" and the agent's summary or blocker, read
+from the task_complete / task_blocked call.
+
+Some models write that call into the answer instead of making it — the reply
+ended in `task_blocked{"blocker": "..."}` and the operator read it as text.
+`Stream` now takes it back out (`EventReset`, then the answer without it) and
+reports it as the outcome. `Outcome.Text` is empty when the answer already
+says the same thing.
+
 ## v0.48.0 — 2026-09-27
 
 Operator approval for write tools. With `ApproveWrites`, every mutating MCP
