@@ -4,6 +4,13 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.49.1 — 2026-09-28
+
+A turn-end call written as JSON inside call parentheses —
+`task_blocked({"blocker": "..."})` — reported the key name "blocker" as the
+blocker. The JSON is now read; call syntax prefers `result=` / `blocker=`
+over the first quoted value.
+
 ## v0.49.0 — 2026-09-28
 
 How a turn ended is now an event of its own. `Stream` emits `EventOutcome`

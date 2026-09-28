@@ -30,6 +30,20 @@ func TestSplitWrittenOutcome(t *testing.T) {
 			text:   "Operator declined the \"reject1\" snapshot",
 		},
 		{
+			name:   "json in call parentheses",
+			in:     "I cannot proceed.\n\ntask_blocked({\"blocker\": \"The operator declined the snapshot.\"})",
+			body:   "I cannot proceed.",
+			status: "blocked",
+			text:   "The operator declined the snapshot.",
+		},
+		{
+			name:   "keyword argument not first",
+			in:     "Stopped.\ntask_blocked(reason_code=\"x\", blocker=\"needs approval\")",
+			body:   "Stopped.",
+			status: "blocked",
+			text:   "needs approval",
+		},
+		{
 			name:   "only the call",
 			in:     "task_complete{\"result\": \"done\"}",
 			body:   "",

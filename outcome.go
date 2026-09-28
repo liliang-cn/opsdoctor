@@ -32,7 +32,10 @@ func outcomeFromCall(tool string, args map[string]any) *Outcome {
 // (task_complete{"result": "..."}) and call syntax (task_blocked(blocker="...")).
 var writtenOutcome = regexp.MustCompile(`(?s)(?:^|\n|\s)(task_complete|task_blocked)\s*([\{\(].*[\}\)])\s*$`)
 
-// callArgPattern pulls the first quoted value out of call syntax.
+// namedArgPattern pulls a result= / blocker= value out of call syntax.
+var namedArgPattern = regexp.MustCompile(`(?:result|blocker)\s*[=:]\s*"((?:[^"\\]|\\.)*)"`)
+
+// callArgPattern is the fallback: the first quoted value.
 var callArgPattern = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
 
 // splitWrittenOutcome separates such a written call from the answer before
@@ -46,11 +49,18 @@ func splitWrittenOutcome(answer string) (string, *Outcome) {
 	raw := answer[m[4]:m[5]]
 
 	args := map[string]any{}
+	// task_blocked({"blocker": ...}) is JSON wrapped in call parentheses.
+	if inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "("), ")")); strings.HasPrefix(raw, "(") && strings.HasPrefix(inner, "{") {
+		raw = inner
+	}
 	if strings.HasPrefix(raw, "{") && json.Unmarshal([]byte(raw), &args) != nil {
 		return answer, nil // not a call after all
 	}
 	if strings.HasPrefix(raw, "(") {
-		v := callArgPattern.FindStringSubmatch(raw)
+		v := namedArgPattern.FindStringSubmatch(raw)
+		if v == nil {
+			v = callArgPattern.FindStringSubmatch(raw)
+		}
 		if v == nil {
 			return answer, nil
 		}
