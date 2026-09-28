@@ -3,15 +3,19 @@ package config
 import "testing"
 
 // A host provisioned under the old name keeps working: its EnvironmentFile
-// says OSS_*, and the program now asks for OPSDOCTOR_*. Reading neither
+// says OPSDOCTOR_* or OSS_*, and the program now asks for OPSPILOT_*. Reading neither
 // would start the service unconfigured with nothing in the log saying why.
 func TestGetenvFallsBackToTheOldPrefix(t *testing.T) {
-	t.Setenv("OSS_LLM_MODEL", "old")
-	if got := Getenv("OPSDOCTOR_LLM_MODEL"); got != "old" {
+	t.Setenv("OSS_LLM_MODEL", "oldest")
+	if got := Getenv("OPSPILOT_LLM_MODEL"); got != "oldest" {
 		t.Errorf("Getenv = %q, want the OSS_ value", got)
 	}
-	t.Setenv("OPSDOCTOR_LLM_MODEL", "new")
-	if got := Getenv("OPSDOCTOR_LLM_MODEL"); got != "new" {
+	t.Setenv("OPSDOCTOR_LLM_MODEL", "old")
+	if got := Getenv("OPSPILOT_LLM_MODEL"); got != "old" {
+		t.Errorf("Getenv = %q, want the OPSDOCTOR_ value over the OSS_ one", got)
+	}
+	t.Setenv("OPSPILOT_LLM_MODEL", "new")
+	if got := Getenv("OPSPILOT_LLM_MODEL"); got != "new" {
 		t.Errorf("Getenv = %q, want the new name to win when both are set", got)
 	}
 	if got := Getenv("UNRELATED"); got != "" {
@@ -23,8 +27,8 @@ func TestAlchemyIsOffUntilAnAddressIsGiven(t *testing.T) {
 	if got := Load(); got.AlchemyAddr != "" || got.AlchemyTLS {
 		t.Errorf("alchemy configured from nothing: %+v", got)
 	}
-	t.Setenv("OPSDOCTOR_ALCHEMY_ADDR", "127.0.0.1:43711")
-	t.Setenv("OPSDOCTOR_ALCHEMY_TLS", "Yes")
+	t.Setenv("OPSPILOT_ALCHEMY_ADDR", "127.0.0.1:43711")
+	t.Setenv("OPSPILOT_ALCHEMY_TLS", "Yes")
 	got := Load()
 	if got.AlchemyAddr != "127.0.0.1:43711" || !got.AlchemyTLS {
 		t.Errorf("alchemy = %q tls=%v", got.AlchemyAddr, got.AlchemyTLS)

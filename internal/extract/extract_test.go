@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opspilot/internal/domain"
 )
 
 // TestWarnsOnceOnMissingOntology proves the ingest is not silent about a graph

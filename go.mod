@@ -1,4 +1,4 @@
-module github.com/liliang-cn/opsdoctor
+module github.com/liliang-cn/opspilot
 
 go 1.25.5
 

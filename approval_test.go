@@ -1,4 +1,4 @@
-package opsdoctor
+package opspilot
 
 import (
 	"context"

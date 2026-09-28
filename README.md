@@ -1,9 +1,12 @@
-# opsdoctor
+# opspilot
 
 A **product-agnostic platform** for building AI ops & support agents over an
 open-source project. The engine knows nothing about any specific product — a
 "domain" is supplied entirely by a `domain.toml`. A worked example domain ships
 under `examples/`; the same engine serves any storage/infra project.
+
+Named opsdoctor until v0.50.0 and oss-agent until v0.38.0. `OPSDOCTOR_*` and
+`OSS_*` environment variables are still read when the `OPSPILOT_*` name is unset.
 
 ## What it does
 
@@ -44,24 +47,24 @@ repos/docs ───┘                         └── red-line safety wall (
 ## Commands
 
 ```
-opsdoctor ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
-opsdoctor diagnose <symptom>   same loop, framed for troubleshooting
-opsdoctor chat                 multi-turn (history kept across turns)
-opsdoctor serve                start the HTTP API (OPSDOCTOR_HTTP_ADDR, default :7634)
-opsdoctor analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
-opsdoctor ingest <dir>         ingest *.md docs
-opsdoctor ingest-repo <url>    clone → understand → import (graph), or text fallback
-opsdoctor refresh <url|dir>    purge one source (catches deletions) and re-import it
-opsdoctor import-graph <f>     import an Understand-Anything knowledge-graph.json
-opsdoctor search <query>       query the knowledge base directly (no LLM)
-opsdoctor search-graph <query> search + one-hop graph expansion (calls/contains/…)
-opsdoctor check <command...>   test a command against the red-line wall
-opsdoctor domain               print the loaded domain config
+opspilot ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
+opspilot diagnose <symptom>   same loop, framed for troubleshooting
+opspilot chat                 multi-turn (history kept across turns)
+opspilot serve                start the HTTP API (OPSPILOT_HTTP_ADDR, default :7634)
+opspilot analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
+opspilot ingest <dir>         ingest *.md docs
+opspilot ingest-repo <url>    clone → understand → import (graph), or text fallback
+opspilot refresh <url|dir>    purge one source (catches deletions) and re-import it
+opspilot import-graph <f>     import an Understand-Anything knowledge-graph.json
+opspilot search <query>       query the knowledge base directly (no LLM)
+opspilot search-graph <query> search + one-hop graph expansion (calls/contains/…)
+opspilot check <command...>   test a command against the red-line wall
+opspilot domain               print the loaded domain config
 ```
 
-## HTTP API (`opsdoctor serve`)
+## HTTP API (`opspilot serve`)
 
-A thin JSON layer over the same agent + knowledge store. Address via `OPSDOCTOR_HTTP_ADDR`
+A thin JSON layer over the same agent + knowledge store. Address via `OPSPILOT_HTTP_ADDR`
 (default `:7634`). Without an LLM key it serves the search endpoints only.
 
 ```
@@ -76,7 +79,7 @@ POST /analyze-log    multipart 'log' file OR {path}   → triage groups; ?diagno
 ```
 
 Multi-turn history is keyed by `session_id` and persisted by agent-go's session
-store (at `OPSDOCTOR_DB_PATH`), so conversations survive across requests and restarts.
+store (at `OPSPILOT_DB_PATH`), so conversations survive across requests and restarts.
 
 Two memory layers on `/chat`:
 - **within-session** — agent-go session history (same `session_id`).
@@ -84,27 +87,27 @@ Two memory layers on `/chat`:
   (global `conversations` bucket); each new question semantically recalls relevant
   turns from *any* past conversation and prepends them as optional context. The
   response's `recalled` field reports how many were pulled. Toggle with
-  `OPSDOCTOR_CONV_MEMORY=off`.
+  `OPSPILOT_CONV_MEMORY=off`.
 
 ## Configuration (env)
 
 ```
-OPSDOCTOR_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
-OPSDOCTOR_LLM_API_KEY     LLM key (OpenAI-compatible)   OPSDOCTOR_LLM_BASE_URL / OPSDOCTOR_LLM_MODEL
-OPSDOCTOR_EMB_API_KEY     embedder key                  OPSDOCTOR_EMB_BASE_URL / OPSDOCTOR_EMB_MODEL / OPSDOCTOR_EMB_DIM
-OPSDOCTOR_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
-OPSDOCTOR_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
-OPSDOCTOR_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
-OPSDOCTOR_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
-OPSDOCTOR_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy (see below)
-OPSDOCTOR_ALCHEMY_TOKEN   its bearer token   OPSDOCTOR_ALCHEMY_TLS=1 to use TLS
+OPSPILOT_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
+OPSPILOT_LLM_API_KEY     LLM key (OpenAI-compatible)   OPSPILOT_LLM_BASE_URL / OPSPILOT_LLM_MODEL
+OPSPILOT_EMB_API_KEY     embedder key                  OPSPILOT_EMB_BASE_URL / OPSPILOT_EMB_MODEL / OPSPILOT_EMB_DIM
+OPSPILOT_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
+OPSPILOT_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
+OPSPILOT_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
+OPSPILOT_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+OPSPILOT_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy (see below)
+OPSPILOT_ALCHEMY_TOKEN   its bearer token   OPSPILOT_ALCHEMY_TLS=1 to use TLS
 ```
 
 Any OpenAI-compatible endpoint works, and the LLM and the embedder need not be the
 same provider. What we run:
 
 ```
-OPSDOCTOR_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSDOCTOR_LLM_MODEL=gemini-3.8-flash-high
+OPSPILOT_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSPILOT_LLM_MODEL=gemini-3.8-flash-high
 ```
 
 The embedder used to query must match the one used to build the store (e.g. ollama
@@ -115,12 +118,12 @@ time, and the embedder cannot.
 
 1. Write a `domain.toml` (see `examples/example/domain.toml`): persona,
    entity/relation types, `error_patterns`, `probes`, `repos`, `red_lines`.
-2. Point `OPSDOCTOR_DOMAIN_FILE` at it.
+2. Point `OPSPILOT_DOMAIN_FILE` at it.
 
 ### Extraction through alchemy
 
 By default prose is read into the graph by a built-in extractor: one LLM call
-per chunk under the domain's vocabulary. With `OPSDOCTOR_ALCHEMY_ADDR` set, it
+per chunk under the domain's vocabulary. With `OPSPILOT_ALCHEMY_ADDR` set, it
 is read by [alchemy](https://github.com/liliang-cn/alchemy) instead. Each
 document becomes one alchemy job of its chunks, checked against the
 vocabulary translated from `domain.toml`, and what comes back carries what the
@@ -138,7 +141,7 @@ built-in extractor cannot say:
 
 Entities keep the store's identity — the same gateway named in forty documents
 is one node — and `refresh`, `resolve`, `doctor` and citations work as before.
-`opsdoctor doctor` reports whether alchemy is reachable with the token given.
+`opspilot doctor` reports whether alchemy is reachable with the token given.
 
 **What alchemy holds a job on is decided in `domain.toml`, not by alchemy.**
 The hold above fires on three per-relation flags, and the default for each is
@@ -176,23 +179,23 @@ refusals. `examples/example/domain.toml` shows both flags in place.
 ## Use as a library
 
 The CLI and HTTP server are one app built on the public package
-`github.com/liliang-cn/opsdoctor` — embed the same engine in your own program:
+`github.com/liliang-cn/opspilot` — embed the same engine in your own program:
 
 ```go
-import opsdoctor "github.com/liliang-cn/opsdoctor"
+import opspilot "github.com/liliang-cn/opspilot"
 
-// Zero-value fields fall back to OPSDOCTOR_* env vars, then defaults.
-a, err := opsdoctor.New(opsdoctor.Config{DomainFile: "domain.toml"})
+// Zero-value fields fall back to OPSPILOT_* env vars, then defaults.
+a, err := opspilot.New(opspilot.Config{DomainFile: "domain.toml"})
 if err != nil { log.Fatal(err) }
 defer a.Close()
 
 answer, _ := a.Ask(ctx, "How do I recover a StandAlone resource?")
 
 // Stream tool calls + the grounded, cited answer:
-a.Stream(ctx, question, func(e opsdoctor.Event) {
+a.Stream(ctx, question, func(e opspilot.Event) {
     switch e.Kind {
-    case opsdoctor.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
-    case opsdoctor.EventText:     fmt.Print(e.Text)
+    case opspilot.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
+    case opspilot.EventText:     fmt.Print(e.Text)
     }
 })
 ```
@@ -214,5 +217,5 @@ Updates re-embed with the Agent's embedder, so it **must** match the target DB's
 model/dimension (e.g. the extracted `drbd-reactor.db` is `text-embedding-v4` / 1024-dim)
 — mismatched vectors corrupt retrieval.
 
-Config is env-first, so a process configured via `OPSDOCTOR_*` can call
-`opsdoctor.New(opsdoctor.Config{})`. A runnable example lives in `examples/lib/`.
+Config is env-first, so a process configured via `OPSPILOT_*` can call
+`opspilot.New(opspilot.Config{})`. A runnable example lives in `examples/lib/`.

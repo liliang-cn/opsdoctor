@@ -1,4 +1,4 @@
-// Package opsdoctor is the library API for building a product-agnostic AI ops &
+// Package opspilot is the library API for building a product-agnostic AI ops &
 // support agent over an open-source project's code, docs, and runbooks.
 //
 // The engine knows nothing about any specific product: a "domain" (persona,
@@ -9,15 +9,15 @@
 //
 // Minimal use:
 //
-//	a, err := opsdoctor.New(opsdoctor.Config{DomainFile: "domain.toml"})
+//	a, err := opspilot.New(opspilot.Config{DomainFile: "domain.toml"})
 //	if err != nil { log.Fatal(err) }
 //	defer a.Close()
 //	answer, err := a.Ask(ctx, "How do I recover a resource stuck in a degraded state?")
 //
-// Any Config field left zero falls back to the matching OPSDOCTOR_* environment variable
+// Any Config field left zero falls back to the matching OPSPILOT_* environment variable
 // and then a built-in default, so a process configured purely through the
-// environment can call opsdoctor.New(opsdoctor.Config{}).
-package opsdoctor
+// environment can call opspilot.New(opspilot.Config{}).
+package opspilot
 
 import (
 	"context"
@@ -33,14 +33,14 @@ import (
 	"github.com/liliang-cn/agent-go/v3/pkg/agent"
 	"github.com/liliang-cn/agent-go/v3/pkg/mcp"
 
-	"github.com/liliang-cn/opsdoctor/internal/agents"
-	"github.com/liliang-cn/opsdoctor/internal/cite"
-	"github.com/liliang-cn/opsdoctor/internal/config"
-	"github.com/liliang-cn/opsdoctor/internal/domain"
-	"github.com/liliang-cn/opsdoctor/internal/ingest"
-	"github.com/liliang-cn/opsdoctor/internal/knowledge"
-	"github.com/liliang-cn/opsdoctor/internal/loganalyze"
-	"github.com/liliang-cn/opsdoctor/internal/safety"
+	"github.com/liliang-cn/opspilot/internal/agents"
+	"github.com/liliang-cn/opspilot/internal/cite"
+	"github.com/liliang-cn/opspilot/internal/config"
+	"github.com/liliang-cn/opspilot/internal/domain"
+	"github.com/liliang-cn/opspilot/internal/ingest"
+	"github.com/liliang-cn/opspilot/internal/knowledge"
+	"github.com/liliang-cn/opspilot/internal/loganalyze"
+	"github.com/liliang-cn/opspilot/internal/safety"
 )
 
 // Re-exported types so callers never import internal packages.
@@ -75,40 +75,40 @@ type (
 	LogReport = loganalyze.Report
 )
 
-// Config configures an Agent. Every zero-valued field falls back to its OPSDOCTOR_*
+// Config configures an Agent. Every zero-valued field falls back to its OPSPILOT_*
 // environment variable and then a default (see the package docs).
 type Config struct {
-	LLMBaseURL string // OPSDOCTOR_LLM_BASE_URL (default https://api.openai.com/v1)
-	LLMAPIKey  string // OPSDOCTOR_LLM_API_KEY (required for Ask/Diagnose/Chat/Stream)
-	LLMModel   string // OPSDOCTOR_LLM_MODEL (default gpt-4o)
+	LLMBaseURL string // OPSPILOT_LLM_BASE_URL (default https://api.openai.com/v1)
+	LLMAPIKey  string // OPSPILOT_LLM_API_KEY (required for Ask/Diagnose/Chat/Stream)
+	LLMModel   string // OPSPILOT_LLM_MODEL (default gpt-4o)
 
-	EmbBaseURL string // OPSDOCTOR_EMB_BASE_URL (defaults to LLMBaseURL)
-	EmbAPIKey  string // OPSDOCTOR_EMB_API_KEY (defaults to LLMAPIKey)
-	EmbModel   string // OPSDOCTOR_EMB_MODEL (default text-embedding-3-small)
-	EmbDim     int    // OPSDOCTOR_EMB_DIM (default 1536) — must match the index
+	EmbBaseURL string // OPSPILOT_EMB_BASE_URL (defaults to LLMBaseURL)
+	EmbAPIKey  string // OPSPILOT_EMB_API_KEY (defaults to LLMAPIKey)
+	EmbModel   string // OPSPILOT_EMB_MODEL (default text-embedding-3-small)
+	EmbDim     int    // OPSPILOT_EMB_DIM (default 1536) — must match the index
 
-	KnowledgeDBPath string // OPSDOCTOR_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
+	KnowledgeDBPath string // OPSPILOT_KNOWLEDGE_DB_PATH (default ./data/knowledge.db)
 	// SharedKnowledgeDBPaths are read-only knowledge bases searched alongside
 	// KnowledgeDBPath — product knowledge built once and installed as a file.
-	// OPSDOCTOR_SHARED_KNOWLEDGE_DBS (comma-separated). Nothing is written to them.
+	// OPSPILOT_SHARED_KNOWLEDGE_DBS (comma-separated). Nothing is written to them.
 	SharedKnowledgeDBPaths []string
-	SessionDBPath          string // OPSDOCTOR_DB_PATH (default ./data/opsdoctor.db)
+	SessionDBPath          string // OPSPILOT_DB_PATH (default ./data/opspilot.db)
 
 	// alchemy, the extraction service. With an address, Ingest reads prose
 	// through alchemy: every node and edge carries provenance, and a
 	// document whose sources contradict each other is held rather than
 	// written. Without one, the built-in per-chunk LLM extractor reads it.
-	AlchemyAddr  string // OPSDOCTOR_ALCHEMY_ADDR
-	AlchemyToken string // OPSDOCTOR_ALCHEMY_TOKEN
-	AlchemyTLS   bool   // OPSDOCTOR_ALCHEMY_TLS
+	AlchemyAddr  string // OPSPILOT_ALCHEMY_ADDR
+	AlchemyToken string // OPSPILOT_ALCHEMY_TOKEN
+	AlchemyTLS   bool   // OPSPILOT_ALCHEMY_TLS
 
 	// Domain source. Set Domain for an in-memory config, or DomainFile for a path
-	// to a domain.toml (OPSDOCTOR_DOMAIN_FILE if both are empty). Domain wins if set.
+	// to a domain.toml (OPSPILOT_DOMAIN_FILE if both are empty). Domain wins if set.
 	DomainFile string
 	Domain     *Domain
 
 	// MCPServers are external MCP servers whose tools are mounted into the ReAct
-	// loop. This is a code-only knob (no OPSDOCTOR_* fallback). A server that fails to
+	// loop. This is a code-only knob (no OPSPILOT_* fallback). A server that fails to
 	// connect is skipped (the agent degrades to knowledge-only); inspect the
 	// outcome with Agent.MCPStatus. Mark a spec ReadOnly to mount only its
 	// observational tools — the safe default for cluster-control servers.
@@ -361,10 +361,10 @@ func (a *Agent) Diagnose(ctx context.Context, symptom string) (string, error) {
 const maxToolRounds = 8
 
 // debugEnabled turns on verbose per-turn tracing (every tool call with args, every
-// tool result, suggestions, resets and the final answer). Enable with OPSDOCTOR_DEBUG=1
+// tool result, suggestions, resets and the final answer). Enable with OPSPILOT_DEBUG=1
 // (or true/yes/on). Off by default so production logs stay quiet.
 func debugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(config.Getenv("OPSDOCTOR_DEBUG"))) {
+	switch strings.ToLower(strings.TrimSpace(config.Getenv("OPSPILOT_DEBUG"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -507,7 +507,7 @@ func (a *Agent) ResolveSpellings(ctx context.Context, dryRun bool) (*SpellingRep
 // work", which is the question that goes wrong silently. Every check exists
 // because the corresponding failure produced no error anywhere — the copilot
 // simply answered worse, and nothing said why. A caller embedding this library
-// has no CLI to run `opsdoctor doctor` with, which is the whole reason it is
+// has no CLI to run `opspilot doctor` with, which is the whole reason it is
 // here.
 func (a *Agent) Doctor(ctx context.Context) *Diagnosis {
 	return a.store.Doctor(ctx, a.embBaseURL)
@@ -581,7 +581,7 @@ type Event struct {
 func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(Event)) (answer string, sources []string, err error) {
 	dbg := debugEnabled()
 	if dbg {
-		log.Printf("[opsdoctor] ▶ turn start: session=%q question=%q (maxToolRounds=%d, mcp_servers=%d)", sessionID, truncate(question, 300), maxToolRounds, len(a.mcp))
+		log.Printf("[opspilot] ▶ turn start: session=%q question=%q (maxToolRounds=%d, mcp_servers=%d)", sessionID, truncate(question, 300), maxToolRounds, len(a.mcp))
 	}
 	// Approvals are emitted from the tool call, on the agent's goroutine, while
 	// this one is emitting everything else: callers get one event at a time.
@@ -595,7 +595,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 	if a.approvals != nil {
 		ctx = withApprover(ctx, func(ap Approval) {
 			if dbg {
-				log.Printf("[opsdoctor]   ⏸ approval %s: %s args=%s", ap.ID, ap.Tool, jsonCompact(ap.Args))
+				log.Printf("[opspilot]   ⏸ approval %s: %s args=%s", ap.ID, ap.Tool, jsonCompact(ap.Args))
 			}
 			on(Event{Kind: EventApproval, Tool: ap.Tool, Args: ap.Args, Approval: &ap})
 		})
@@ -607,7 +607,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 	events, err := a.svc.RunStreamWithOptions(ctx, question, opts...)
 	if err != nil {
 		if dbg {
-			log.Printf("[opsdoctor] ✗ RunStream error: %v", err)
+			log.Printf("[opspilot] ✗ RunStream error: %v", err)
 		}
 		return "", nil, err
 	}
@@ -624,27 +624,27 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 				partials++
 				full += ev.Content
 				if dbg {
-					log.Printf("[opsdoctor]   · text delta (%d chars): %q", len([]rune(ev.Content)), truncate(ev.Content, 120))
+					log.Printf("[opspilot]   · text delta (%d chars): %q", len([]rune(ev.Content)), truncate(ev.Content, 120))
 				}
 				on(Event{Kind: EventText, Text: ev.Content})
 			}
 		case agent.EventTypeToolCall:
 			if o := outcomeFromCall(ev.ToolName, ev.ToolArgs); o != nil { // internal turn-end sentinels
 				if dbg {
-					log.Printf("[opsdoctor]   ✓ %s (model ended the turn): %q", ev.ToolName, truncate(o.Text, 160))
+					log.Printf("[opspilot]   ✓ %s (model ended the turn): %q", ev.ToolName, truncate(o.Text, 160))
 				}
 				outcome = o
 				continue
 			}
 			if ev.ToolName == agents.SuggestActionToolName {
 				if dbg {
-					log.Printf("[opsdoctor]   ⚑ suggest_action call args=%s", jsonCompact(ev.ToolArgs))
+					log.Printf("[opspilot]   ⚑ suggest_action call args=%s", jsonCompact(ev.ToolArgs))
 				}
 				continue // the proposal is surfaced on the tool result as EventSuggestion
 			}
 			toolCalls++
 			if dbg {
-				log.Printf("[opsdoctor]   → tool call #%d: %s args=%s", toolCalls, ev.ToolName, jsonCompact(ev.ToolArgs))
+				log.Printf("[opspilot]   → tool call #%d: %s args=%s", toolCalls, ev.ToolName, jsonCompact(ev.ToolArgs))
 			}
 			on(Event{Kind: EventToolCall, Tool: ev.ToolName, Args: ev.ToolArgs})
 		case agent.EventTypeToolResult:
@@ -655,7 +655,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 				if s := parseSuggestion(ev.ToolResult); s != nil {
 					suggestions++
 					if dbg {
-						log.Printf("[opsdoctor]   ⚑ suggestion #%d: action=%s params=%s severity=%s blocked=%v reason=%q",
+						log.Printf("[opspilot]   ⚑ suggestion #%d: action=%s params=%s severity=%s blocked=%v reason=%q",
 							suggestions, s.Action, jsonCompact(s.Params), s.Severity, s.Verdict.Blocked, truncate(s.Reason, 160))
 					}
 					on(Event{Kind: EventSuggestion, Tool: ev.ToolName, Suggestion: s})
@@ -667,20 +667,20 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 			}
 			toolResults++
 			if dbg {
-				log.Printf("[opsdoctor]   ← tool result #%d: %s → %s", toolResults, ev.ToolName, truncate(fmt.Sprintf("%v", ev.ToolResult), 240))
+				log.Printf("[opspilot]   ← tool result #%d: %s → %s", toolResults, ev.ToolName, truncate(fmt.Sprintf("%v", ev.ToolResult), 240))
 			}
 			on(Event{Kind: EventToolResult, Tool: ev.ToolName})
 		case agent.EventTypeComplete:
 			final = ev.Content
 			if dbg {
-				log.Printf("[opsdoctor]   ■ complete: answer (%d chars): %q", len([]rune(final)), truncate(final, 200))
+				log.Printf("[opspilot]   ■ complete: answer (%d chars): %q", len([]rune(final)), truncate(final, 200))
 			}
 		case agent.EventTypeError:
 			if strings.Contains(ev.Content, "compaction") { // internal, non-fatal
 				continue
 			}
 			if dbg {
-				log.Printf("[opsdoctor]   ⚠ error event: %s", truncate(ev.Content, 200))
+				log.Printf("[opspilot]   ⚠ error event: %s", truncate(ev.Content, 200))
 			}
 			on(Event{Kind: EventError, Text: ev.Content})
 		}
@@ -718,7 +718,7 @@ func (a *Agent) Stream(ctx context.Context, sessionID, question string, on func(
 		on(Event{Kind: EventText, Text: foot})
 	}
 	if dbg {
-		log.Printf("[opsdoctor] ◀ turn done: tool_calls=%d tool_results=%d suggestions=%d text_deltas=%d sources=%d answer_len=%d",
+		log.Printf("[opspilot] ◀ turn done: tool_calls=%d tool_results=%d suggestions=%d text_deltas=%d sources=%d answer_len=%d",
 			toolCalls, toolResults, suggestions, partials, len(sources), len([]rune(full)))
 	}
 	return full, sources, nil

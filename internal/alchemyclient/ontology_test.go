@@ -7,7 +7,7 @@ import (
 
 	"github.com/liliang-cn/alchemy/pkg/ontology"
 
-	"github.com/liliang-cn/opsdoctor/internal/domain"
+	"github.com/liliang-cn/opspilot/internal/domain"
 )
 
 func exampleDomain() *domain.Domain {

@@ -11,7 +11,7 @@ import (
 	"github.com/liliang-cn/alchemy/pkg/alchemy"
 	cortexdb "github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
 
-	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opspilot/internal/knowledge"
 )
 
 // Metadata keys written on every node and edge alchemy produced. They are
@@ -135,5 +135,7 @@ func idempotencyKey(ontologyID, docID string, chunks []string) string {
 		h.Write([]byte{0x1e})
 		h.Write([]byte(c))
 	}
+	// The prefix is the program's name before v0.50.0, kept: these ids are
+	// already stored in alchemy, and a new prefix would duplicate every job.
 	return "opsdoctor:" + hex.EncodeToString(h.Sum(nil))[:32]
 }

@@ -42,46 +42,51 @@ type Config struct {
 
 // Load reads config from environment variables with sensible defaults.
 //
-//	OPSDOCTOR_LLM_BASE_URL / OPSDOCTOR_LLM_API_KEY / OPSDOCTOR_LLM_MODEL
-//	OPSDOCTOR_EMB_BASE_URL / OPSDOCTOR_EMB_API_KEY / OPSDOCTOR_EMB_MODEL
-//	OPSDOCTOR_DB_PATH
-//	OPSDOCTOR_ALCHEMY_ADDR / OPSDOCTOR_ALCHEMY_TOKEN / OPSDOCTOR_ALCHEMY_TLS
+//	OPSPILOT_LLM_BASE_URL / OPSPILOT_LLM_API_KEY / OPSPILOT_LLM_MODEL
+//	OPSPILOT_EMB_BASE_URL / OPSPILOT_EMB_API_KEY / OPSPILOT_EMB_MODEL
+//	OPSPILOT_DB_PATH
+//	OPSPILOT_ALCHEMY_ADDR / OPSPILOT_ALCHEMY_TOKEN / OPSPILOT_ALCHEMY_TLS
 func Load() Config {
-	llmBase := env("OPSDOCTOR_LLM_BASE_URL", "https://api.openai.com/v1")
-	llmKey := Getenv("OPSDOCTOR_LLM_API_KEY")
+	llmBase := env("OPSPILOT_LLM_BASE_URL", "https://api.openai.com/v1")
+	llmKey := Getenv("OPSPILOT_LLM_API_KEY")
 	return Config{
 		LLMBaseURL:             llmBase,
 		LLMAPIKey:              llmKey,
-		LLMModel:               env("OPSDOCTOR_LLM_MODEL", "gpt-4o"),
-		EmbBaseURL:             env("OPSDOCTOR_EMB_BASE_URL", llmBase),
-		EmbAPIKey:              env("OPSDOCTOR_EMB_API_KEY", llmKey),
-		EmbModel:               env("OPSDOCTOR_EMB_MODEL", "text-embedding-3-small"),
-		DBPath:                 env("OPSDOCTOR_DB_PATH", "./data/opsdoctor.db"),
-		KnowledgeDBPath:        env("OPSDOCTOR_KNOWLEDGE_DB_PATH", "./data/knowledge.db"),
-		EmbDim:                 envInt("OPSDOCTOR_EMB_DIM", 1536),
-		SharedKnowledgeDBPaths: splitList(Getenv("OPSDOCTOR_SHARED_KNOWLEDGE_DBS")),
-		DomainFile:             env("OPSDOCTOR_DOMAIN_FILE", "./domain.toml"),
-		AlchemyAddr:            Getenv("OPSDOCTOR_ALCHEMY_ADDR"),
-		AlchemyToken:           Getenv("OPSDOCTOR_ALCHEMY_TOKEN"),
-		AlchemyTLS:             envBool("OPSDOCTOR_ALCHEMY_TLS"),
+		LLMModel:               env("OPSPILOT_LLM_MODEL", "gpt-4o"),
+		EmbBaseURL:             env("OPSPILOT_EMB_BASE_URL", llmBase),
+		EmbAPIKey:              env("OPSPILOT_EMB_API_KEY", llmKey),
+		EmbModel:               env("OPSPILOT_EMB_MODEL", "text-embedding-3-small"),
+		DBPath:                 env("OPSPILOT_DB_PATH", "./data/opspilot.db"),
+		KnowledgeDBPath:        env("OPSPILOT_KNOWLEDGE_DB_PATH", "./data/knowledge.db"),
+		EmbDim:                 envInt("OPSPILOT_EMB_DIM", 1536),
+		SharedKnowledgeDBPaths: splitList(Getenv("OPSPILOT_SHARED_KNOWLEDGE_DBS")),
+		DomainFile:             env("OPSPILOT_DOMAIN_FILE", "./domain.toml"),
+		AlchemyAddr:            Getenv("OPSPILOT_ALCHEMY_ADDR"),
+		AlchemyToken:           Getenv("OPSPILOT_ALCHEMY_TOKEN"),
+		AlchemyTLS:             envBool("OPSPILOT_ALCHEMY_TLS"),
 	}
 }
 
-// legacyPrefix is what every variable was called before the program was
-// renamed. A host provisioned as oss-agent has an EnvironmentFile full of
-// OSS_* names, and a rename that silently read none of them would start the
-// service with no key, no domain and an empty knowledge base — the same shape
-// as every other misconfiguration, with nothing in the log naming the cause.
-const legacyPrefix = "OSS_"
+// legacyPrefixes are what every variable was called before the program was
+// renamed: OPSDOCTOR_* until v0.50.0, OSS_* (oss-agent) until v0.38.0. A host
+// provisioned under an old name has an EnvironmentFile full of those names,
+// and a rename that silently read none of them would start the service with no
+// key, no domain and an empty knowledge base — the same shape as every other
+// misconfiguration, with nothing in the log naming the cause.
+var legacyPrefixes = []string{"OPSDOCTOR_", "OSS_"}
 
-// Getenv reads an OPSDOCTOR_* variable, falling back to the OSS_* name it had
-// before v0.38.0. The new name wins when both are set.
+// Getenv reads an OPSPILOT_* variable, falling back to its OPSDOCTOR_* and
+// then OSS_* name. The newest name wins when several are set.
 func Getenv(key string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
-	if strings.HasPrefix(key, "OPSDOCTOR_") {
-		return os.Getenv(legacyPrefix + strings.TrimPrefix(key, "OPSDOCTOR_"))
+	if strings.HasPrefix(key, "OPSPILOT_") {
+		for _, p := range legacyPrefixes {
+			if v := os.Getenv(p + strings.TrimPrefix(key, "OPSPILOT_")); v != "" {
+				return v
+			}
+		}
 	}
 	return ""
 }

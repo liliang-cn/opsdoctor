@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/liliang-cn/opsdoctor/internal/domain"
-	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opspilot/internal/domain"
+	"github.com/liliang-cn/opspilot/internal/knowledge"
 )
 
 // Stats summarizes an ingest run.

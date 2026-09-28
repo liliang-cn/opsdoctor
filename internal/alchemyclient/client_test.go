@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/liliang-cn/opsdoctor/internal/knowledge"
+	"github.com/liliang-cn/opspilot/internal/knowledge"
 )
 
 // fake is enough of an alchemy server to drive one job through the client:

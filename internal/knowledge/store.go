@@ -23,7 +23,7 @@ import (
 	"github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
 	"github.com/liliang-cn/cortexdb/v2/pkg/graph"
 
-	"github.com/liliang-cn/opsdoctor/internal/extract"
+	"github.com/liliang-cn/opspilot/internal/extract"
 )
 
 // searchReranker is the second-stage reranker applied to the over-fetched
@@ -513,7 +513,7 @@ func (s *Store) searchGraphLocal(ctx context.Context, query string, topK int) (*
 		// It is still worth a line, because the only symptom of a graph that is
 		// never walked is an answer that is merely a little thinner than it
 		// should be — which nobody notices.
-		log.Printf("[opsdoctor] knowledge: graph expansion failed, answering from vector hits only: %v", err)
+		log.Printf("[opspilot] knowledge: graph expansion failed, answering from vector hits only: %v", err)
 		return res, nil
 	}
 
@@ -872,7 +872,7 @@ func (s *Store) seedsFromHitText(ctx context.Context, hits []Hit, seen map[strin
 	if err != nil {
 		// Best-effort, like the expansion it feeds: a query that cannot seed by
 		// label still answers from its vector hits.
-		log.Printf("[opsdoctor] knowledge: label seeding failed: %v", err)
+		log.Printf("[opspilot] knowledge: label seeding failed: %v", err)
 		return nil
 	}
 
@@ -1181,7 +1181,7 @@ func (s *Store) extractAndWrite(ctx context.Context, docID string, chunks []Chun
 	dg, err := ex.ExtractDocument(ctx, docID, chunks)
 	if err != nil {
 		extractFailures.Add(1)
-		logOnce(&extractLogged, "[opsdoctor] knowledge: ontology extraction failed for %s, storing vectors only and keeping its previous graph: %v", docID, err)
+		logOnce(&extractLogged, "[opspilot] knowledge: ontology extraction failed for %s, storing vectors only and keeping its previous graph: %v", docID, err)
 		return nil
 	}
 	if dg == nil {
@@ -1194,11 +1194,11 @@ func (s *Store) extractAndWrite(ctx context.Context, docID string, chunks []Chun
 // writer). A held graph is not written; see DocumentGraph.Held.
 func (s *Store) writeDocumentGraph(ctx context.Context, docID string, dg *DocumentGraph) error {
 	for _, note := range dg.Notes {
-		log.Printf("[opsdoctor] knowledge: %s: %s", docID, note)
+		log.Printf("[opspilot] knowledge: %s: %s", docID, note)
 	}
 	if dg.Held != "" {
 		heldDocuments.Add(1)
-		log.Printf("[opsdoctor] knowledge: %s: graph withheld — %s. Vectors are stored and any previous graph kept; the new graph is written once the review is answered and the source re-ingested.", docID, dg.Held)
+		log.Printf("[opspilot] knowledge: %s: graph withheld — %s. Vectors are stored and any previous graph kept; the new graph is written once the review is answered and the source re-ingested.", docID, dg.Held)
 		return nil
 	}
 	if err := s.replaceDocumentGraph(ctx, docID); err != nil {
@@ -1218,7 +1218,7 @@ func (s *Store) writeDocumentGraph(ctx context.Context, docID string, dg *Docume
 		// fail ingest; it is a reason to say something.
 		if _, err := s.tb.UpsertEntities(ctx, cortexdb.ToolUpsertEntitiesRequest{DocumentID: docID, Entities: ents}); err != nil {
 			upsertFailures.Add(1)
-			logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
+			logOnce(&upsertLogged, "[opspilot] knowledge: storing extracted entities failed for %s, the graph will not grow: %v", docID, err)
 		} else {
 			// The graph now holds entities extracted under the vocabulary
 			// currently loaded — which is the only place that fact can be
@@ -1236,7 +1236,7 @@ func (s *Store) writeDocumentGraph(ctx context.Context, docID string, dg *Docume
 	if len(rels) > 0 {
 		if _, err := s.tb.UpsertRelations(ctx, cortexdb.ToolUpsertRelationsRequest{DocumentID: docID, Relations: rels}); err != nil {
 			upsertFailures.Add(1)
-			logOnce(&upsertLogged, "[opsdoctor] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
+			logOnce(&upsertLogged, "[opspilot] knowledge: storing extracted relations failed for %s, the graph will not be walkable: %v", docID, err)
 		}
 	}
 	return nil

@@ -1,7 +1,7 @@
 # Example domain config.
-# This is ONE worked example of an opsdoctor domain. Any project copies this
-# file, edits it for their own product, and points opsdoctor at it via
-# OPSDOCTOR_DOMAIN_FILE — no platform source changes needed. The example below models a
+# This is ONE worked example of an opspilot domain. Any project copies this
+# file, edits it for their own product, and points opspilot at it via
+# OPSPILOT_DOMAIN_FILE — no platform source changes needed. The example below models a
 # generic Linux storage/HA product; replace every field with your own.
 
 name = "Example storage/infra domain"
@@ -39,7 +39,7 @@ Safety (non-negotiable):
 #      seed, and takes a neighbour slot, ahead of one that is not — imported code
 #      nodes and whatever the model invented stay reachable, just behind.
 #
-# `opsdoctor doctor` reports what the graph holds that is not declared here, what
+# `opspilot doctor` reports what the graph holds that is not declared here, what
 # is declared and never appeared, and whether the graph was extracted under an
 # older version of these lists.
 entity_types = [
@@ -64,7 +64,7 @@ error_patterns = [
 ]
 
 # Source/doc repositories to ingest into the knowledge graph. Add your project's
-# repos here; opsdoctor clones, understands, and imports each.
+# repos here; opspilot clones, understands, and imports each.
 repos = []
 
 # Deterministic destructive-command blocks (LLM-independent). The platform owns
@@ -138,7 +138,7 @@ argv = ["zpool", "status"]
 # relation_types — where it reads best — silently swallows error_patterns and
 # probes into itself. Nothing fails; the domain just comes up with none.
 #
-# The flags matter only when OPSDOCTOR_ALCHEMY_ADDR is set. They are the whole
+# The flags matter only when OPSPILOT_ALCHEMY_ADDR is set. They are the whole
 # of what alchemy can refuse for, and both defaults are wrong for some
 # relation in every real vocabulary:
 #
@@ -178,5 +178,5 @@ both_ways = true
 # CONTAINS is deliberately left undeclared. It is a CHAIN — a cluster contains
 # a pool contains a volume — so the middle term is on both ends, and ends that
 # overlap without being identical leave an edge between two middle terms
-# reading both ways. `opsdoctor domain` refuses exactly that, which is how you
+# reading both ways. `opspilot domain` refuses exactly that, which is how you
 # find out; the flat relation_types entry above still extracts and expands it.

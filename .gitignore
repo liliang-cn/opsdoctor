@@ -1,6 +1,6 @@
 # build artifacts
 bin/
-/opsdoctor
+/opspilot
 
 # runtime data (cortexdb knowledge base + agent memory)
 data/

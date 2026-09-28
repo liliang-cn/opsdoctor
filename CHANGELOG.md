@@ -4,6 +4,23 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.50.0 — 2026-09-28
+
+Renamed opsdoctor → **opspilot**: module `github.com/liliang-cn/opspilot`, root
+package, `cmd/opspilot` binary, `OPSPILOT_*` environment variables. The old
+GitHub URL redirects.
+
+The doctor name described one thing it does — diagnosing — while it also
+proposes changes and runs them once an operator approves, alongside the person
+at the console rather than instead of them.
+
+  - `OPSDOCTOR_*`, then `OSS_*`, are read when the `OPSPILOT_*` name is unset,
+    so hosts provisioned under either old name start unchanged.
+  - Two stored identifiers keep the old spelling, because existing bases hold
+    them: alchemy job ids (`opsdoctor:<hash>`) and the default ontology name.
+  - Importers change the path: `github.com/liliang-cn/opsdoctor` → `github.com/liliang-cn/opspilot`,
+    and the package identifier `opsdoctor.` → `opspilot.`.
+
 ## v0.49.1 — 2026-09-28
 
 A turn-end call written as JSON inside call parentheses —

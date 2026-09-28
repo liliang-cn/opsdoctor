@@ -1,9 +1,9 @@
-// Command lib-example shows how to embed opsdoctor as a library.
+// Command lib-example shows how to embed opspilot as a library.
 //
-// It imports only the public facade (github.com/liliang-cn/opsdoctor) — never an
+// It imports only the public facade (github.com/liliang-cn/opspilot) — never an
 // internal package — so it mirrors how an external project would use it.
 //
-//	OPSDOCTOR_LLM_API_KEY=... OPSDOCTOR_DOMAIN_FILE=domain.toml OPSDOCTOR_KNOWLEDGE_DB_PATH=knowledge.db \
+//	OPSPILOT_LLM_API_KEY=... OPSPILOT_DOMAIN_FILE=domain.toml OPSPILOT_KNOWLEDGE_DB_PATH=knowledge.db \
 //	  go run ./examples/lib "how do I recover a degraded resource?"
 package main
 
@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	opsdoctor "github.com/liliang-cn/opsdoctor"
+	opspilot "github.com/liliang-cn/opspilot"
 )
 
 func main() {
@@ -22,8 +22,8 @@ func main() {
 		question = "How do I safely recover a resource stuck in a degraded state?"
 	}
 
-	// Zero-value fields fall back to OPSDOCTOR_* env vars, then defaults.
-	a, err := opsdoctor.New(opsdoctor.Config{})
+	// Zero-value fields fall back to OPSPILOT_* env vars, then defaults.
+	a, err := opspilot.New(opspilot.Config{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "init:", err)
 		os.Exit(1)
@@ -48,15 +48,15 @@ func main() {
 
 	// 3) Stream a grounded answer, printing tool calls live.
 	fmt.Println("--- answer ---")
-	_, sources, err := a.Stream(context.Background(), "", question, func(e opsdoctor.Event) {
+	_, sources, err := a.Stream(context.Background(), "", question, func(e opspilot.Event) {
 		switch e.Kind {
-		case opsdoctor.EventToolCall:
+		case opspilot.EventToolCall:
 			fmt.Printf("\n[tool %s %v]\n", e.Tool, e.Args)
-		case opsdoctor.EventReset:
+		case opspilot.EventReset:
 			fmt.Print("\n\n(replacing preamble with final answer)\n\n")
-		case opsdoctor.EventText:
+		case opspilot.EventText:
 			fmt.Print(e.Text)
-		case opsdoctor.EventError:
+		case opspilot.EventError:
 			fmt.Fprintln(os.Stderr, "\n[error]", e.Text)
 		}
 	})

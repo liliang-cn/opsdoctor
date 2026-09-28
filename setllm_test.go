@@ -1,9 +1,9 @@
-package opsdoctor
+package opspilot
 
 import (
 	"testing"
 
-	"github.com/liliang-cn/opsdoctor/internal/agents"
+	"github.com/liliang-cn/opspilot/internal/agents"
 )
 
 // bare builds just enough Agent to exercise SetLLM: the swap handle and the key
