@@ -1,12 +1,13 @@
-# opspilot
+# steward
 
 A **product-agnostic platform** for building AI ops & support agents over an
 open-source project. The engine knows nothing about any specific product — a
 "domain" is supplied entirely by a `domain.toml`. A worked example domain ships
 under `examples/`; the same engine serves any storage/infra project.
 
-Named opsdoctor until v0.50.0 and oss-agent until v0.38.0. `OPSDOCTOR_*` and
-`OSS_*` environment variables are still read when the `OPSPILOT_*` name is unset.
+Named opspilot until v0.51.0, opsdoctor until v0.50.0 and oss-agent until v0.38.0.
+`OPSPILOT_*`, `OPSDOCTOR_*` and `OSS_*` environment variables are still read, in
+that order, when the `STEWARD_*` name is unset.
 
 ## What it does
 
@@ -47,24 +48,24 @@ repos/docs ───┘                         └── red-line safety wall (
 ## Commands
 
 ```
-opspilot ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
-opspilot diagnose <symptom>   same loop, framed for troubleshooting
-opspilot chat                 multi-turn (history kept across turns)
-opspilot serve                start the HTTP API (OPSPILOT_HTTP_ADDR, default :7634)
-opspilot analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
-opspilot ingest <dir>         ingest *.md docs
-opspilot ingest-repo <url>    clone → understand → import (graph), or text fallback
-opspilot refresh <url|dir>    purge one source (catches deletions) and re-import it
-opspilot import-graph <f>     import an Understand-Anything knowledge-graph.json
-opspilot search <query>       query the knowledge base directly (no LLM)
-opspilot search-graph <query> search + one-hop graph expansion (calls/contains/…)
-opspilot check <command...>   test a command against the red-line wall
-opspilot domain               print the loaded domain config
+steward ask <question>       one-shot Q&A (ReAct: probes + knowledge_search)
+steward diagnose <symptom>   same loop, framed for troubleshooting
+steward chat                 multi-turn (history kept across turns)
+steward serve                start the HTTP API (STEWARD_HTTP_ADDR, default :7634)
+steward analyze-log <path>   triage a log file / dir / .tar.gz / .zip, + AI diagnosis
+steward ingest <dir>         ingest *.md docs
+steward ingest-repo <url>    clone → understand → import (graph), or text fallback
+steward refresh <url|dir>    purge one source (catches deletions) and re-import it
+steward import-graph <f>     import an Understand-Anything knowledge-graph.json
+steward search <query>       query the knowledge base directly (no LLM)
+steward search-graph <query> search + one-hop graph expansion (calls/contains/…)
+steward check <command...>   test a command against the red-line wall
+steward domain               print the loaded domain config
 ```
 
-## HTTP API (`opspilot serve`)
+## HTTP API (`steward serve`)
 
-A thin JSON layer over the same agent + knowledge store. Address via `OPSPILOT_HTTP_ADDR`
+A thin JSON layer over the same agent + knowledge store. Address via `STEWARD_HTTP_ADDR`
 (default `:7634`). Without an LLM key it serves the search endpoints only.
 
 ```
@@ -79,7 +80,7 @@ POST /analyze-log    multipart 'log' file OR {path}   → triage groups; ?diagno
 ```
 
 Multi-turn history is keyed by `session_id` and persisted by agent-go's session
-store (at `OPSPILOT_DB_PATH`), so conversations survive across requests and restarts.
+store (at `STEWARD_DB_PATH`), so conversations survive across requests and restarts.
 
 Two memory layers on `/chat`:
 - **within-session** — agent-go session history (same `session_id`).
@@ -87,27 +88,27 @@ Two memory layers on `/chat`:
   (global `conversations` bucket); each new question semantically recalls relevant
   turns from *any* past conversation and prepends them as optional context. The
   response's `recalled` field reports how many were pulled. Toggle with
-  `OPSPILOT_CONV_MEMORY=off`.
+  `STEWARD_CONV_MEMORY=off`.
 
 ## Configuration (env)
 
 ```
-OPSPILOT_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
-OPSPILOT_LLM_API_KEY     LLM key (OpenAI-compatible)   OPSPILOT_LLM_BASE_URL / OPSPILOT_LLM_MODEL
-OPSPILOT_EMB_API_KEY     embedder key                  OPSPILOT_EMB_BASE_URL / OPSPILOT_EMB_MODEL / OPSPILOT_EMB_DIM
-OPSPILOT_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
-OPSPILOT_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
-OPSPILOT_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
-OPSPILOT_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
-OPSPILOT_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy (see below)
-OPSPILOT_ALCHEMY_TOKEN   its bearer token   OPSPILOT_ALCHEMY_TLS=1 to use TLS
+STEWARD_DOMAIN_FILE     path to the active domain.toml (e.g. examples/example/domain.toml)
+STEWARD_LLM_API_KEY     LLM key (OpenAI-compatible)   STEWARD_LLM_BASE_URL / STEWARD_LLM_MODEL
+STEWARD_EMB_API_KEY     embedder key                  STEWARD_EMB_BASE_URL / STEWARD_EMB_MODEL / STEWARD_EMB_DIM
+STEWARD_KNOWLEDGE_DB_PATH  cortexdb path (default ./data/knowledge.db)
+STEWARD_HTTP_ADDR       HTTP API listen address for `serve` (default :7634)
+STEWARD_CONV_MEMORY     cross-session chat memory on /chat (default on; set "off" to disable)
+STEWARD_UNDERSTAND_CMD  command run in a repo to produce knowledge-graph.json
+STEWARD_ALCHEMY_ADDR    alchemy gRPC address; prose is then extracted through alchemy (see below)
+STEWARD_ALCHEMY_TOKEN   its bearer token   STEWARD_ALCHEMY_TLS=1 to use TLS
 ```
 
 Any OpenAI-compatible endpoint works, and the LLM and the embedder need not be the
 same provider. What we run:
 
 ```
-OPSPILOT_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSPILOT_LLM_MODEL=gemini-3.8-flash-high
+STEWARD_LLM_BASE_URL=https://cpa.superleo.app/v1  STEWARD_LLM_MODEL=gemini-3.8-flash-high
 ```
 
 The embedder used to query must match the one used to build the store (e.g. ollama
@@ -118,12 +119,12 @@ time, and the embedder cannot.
 
 1. Write a `domain.toml` (see `examples/example/domain.toml`): persona,
    entity/relation types, `error_patterns`, `probes`, `repos`, `red_lines`.
-2. Point `OPSPILOT_DOMAIN_FILE` at it.
+2. Point `STEWARD_DOMAIN_FILE` at it.
 
 ### Extraction through alchemy
 
 By default prose is read into the graph by a built-in extractor: one LLM call
-per chunk under the domain's vocabulary. With `OPSPILOT_ALCHEMY_ADDR` set, it
+per chunk under the domain's vocabulary. With `STEWARD_ALCHEMY_ADDR` set, it
 is read by [alchemy](https://github.com/liliang-cn/alchemy) instead. Each
 document becomes one alchemy job of its chunks, checked against the
 vocabulary translated from `domain.toml`, and what comes back carries what the
@@ -141,7 +142,7 @@ built-in extractor cannot say:
 
 Entities keep the store's identity — the same gateway named in forty documents
 is one node — and `refresh`, `resolve`, `doctor` and citations work as before.
-`opspilot doctor` reports whether alchemy is reachable with the token given.
+`steward doctor` reports whether alchemy is reachable with the token given.
 
 **What alchemy holds a job on is decided in `domain.toml`, not by alchemy.**
 The hold above fires on three per-relation flags, and the default for each is
@@ -179,23 +180,23 @@ refusals. `examples/example/domain.toml` shows both flags in place.
 ## Use as a library
 
 The CLI and HTTP server are one app built on the public package
-`github.com/liliang-cn/opspilot` — embed the same engine in your own program:
+`github.com/liliang-cn/steward` — embed the same engine in your own program:
 
 ```go
-import opspilot "github.com/liliang-cn/opspilot"
+import steward "github.com/liliang-cn/steward"
 
-// Zero-value fields fall back to OPSPILOT_* env vars, then defaults.
-a, err := opspilot.New(opspilot.Config{DomainFile: "domain.toml"})
+// Zero-value fields fall back to STEWARD_* env vars, then defaults.
+a, err := steward.New(steward.Config{DomainFile: "domain.toml"})
 if err != nil { log.Fatal(err) }
 defer a.Close()
 
 answer, _ := a.Ask(ctx, "How do I recover a StandAlone resource?")
 
 // Stream tool calls + the grounded, cited answer:
-a.Stream(ctx, question, func(e opspilot.Event) {
+a.Stream(ctx, question, func(e steward.Event) {
     switch e.Kind {
-    case opspilot.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
-    case opspilot.EventText:     fmt.Print(e.Text)
+    case steward.EventToolCall: log.Printf("tool %s %v", e.Tool, e.Args)
+    case steward.EventText:     fmt.Print(e.Text)
     }
 })
 ```
@@ -217,5 +218,5 @@ Updates re-embed with the Agent's embedder, so it **must** match the target DB's
 model/dimension (e.g. the extracted `drbd-reactor.db` is `text-embedding-v4` / 1024-dim)
 — mismatched vectors corrupt retrieval.
 
-Config is env-first, so a process configured via `OPSPILOT_*` can call
-`opspilot.New(opspilot.Config{})`. A runnable example lives in `examples/lib/`.
+Config is env-first, so a process configured via `STEWARD_*` can call
+`steward.New(steward.Config{})`. A runnable example lives in `examples/lib/`.

@@ -11,7 +11,7 @@ import (
 	"github.com/liliang-cn/alchemy/pkg/alchemy"
 	cortexdb "github.com/liliang-cn/cortexdb/v2/pkg/cortexdb"
 
-	"github.com/liliang-cn/opspilot/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/knowledge"
 )
 
 // Metadata keys written on every node and edge alchemy produced. They are

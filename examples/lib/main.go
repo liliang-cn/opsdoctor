@@ -1,9 +1,9 @@
-// Command lib-example shows how to embed opspilot as a library.
+// Command lib-example shows how to embed steward as a library.
 //
-// It imports only the public facade (github.com/liliang-cn/opspilot) — never an
+// It imports only the public facade (github.com/liliang-cn/steward) — never an
 // internal package — so it mirrors how an external project would use it.
 //
-//	OPSPILOT_LLM_API_KEY=... OPSPILOT_DOMAIN_FILE=domain.toml OPSPILOT_KNOWLEDGE_DB_PATH=knowledge.db \
+//	STEWARD_LLM_API_KEY=... STEWARD_DOMAIN_FILE=domain.toml STEWARD_KNOWLEDGE_DB_PATH=knowledge.db \
 //	  go run ./examples/lib "how do I recover a degraded resource?"
 package main
 
@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	opspilot "github.com/liliang-cn/opspilot"
+	steward "github.com/liliang-cn/steward"
 )
 
 func main() {
@@ -22,8 +22,8 @@ func main() {
 		question = "How do I safely recover a resource stuck in a degraded state?"
 	}
 
-	// Zero-value fields fall back to OPSPILOT_* env vars, then defaults.
-	a, err := opspilot.New(opspilot.Config{})
+	// Zero-value fields fall back to STEWARD_* env vars, then defaults.
+	a, err := steward.New(steward.Config{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "init:", err)
 		os.Exit(1)
@@ -48,15 +48,15 @@ func main() {
 
 	// 3) Stream a grounded answer, printing tool calls live.
 	fmt.Println("--- answer ---")
-	_, sources, err := a.Stream(context.Background(), "", question, func(e opspilot.Event) {
+	_, sources, err := a.Stream(context.Background(), "", question, func(e steward.Event) {
 		switch e.Kind {
-		case opspilot.EventToolCall:
+		case steward.EventToolCall:
 			fmt.Printf("\n[tool %s %v]\n", e.Tool, e.Args)
-		case opspilot.EventReset:
+		case steward.EventReset:
 			fmt.Print("\n\n(replacing preamble with final answer)\n\n")
-		case opspilot.EventText:
+		case steward.EventText:
 			fmt.Print(e.Text)
-		case opspilot.EventError:
+		case steward.EventError:
 			fmt.Fprintln(os.Stderr, "\n[error]", e.Text)
 		}
 	})

@@ -4,6 +4,33 @@ Versions are git tags. Each entry says what changed and, where it matters, what
 was wrong before — a version that only reads as a headline is one nobody can use
 to decide whether to upgrade.
 
+## v0.51.0 — 2026-09-29
+
+Renamed opspilot → **steward**: module `github.com/liliang-cn/steward`, root
+package, `cmd/steward` binary, `STEWARD_*` environment variables. The old
+GitHub URL redirects.
+
+A steward looks after a system on someone else's behalf: knows it, tends it,
+and asks before acting. That covers what this does — diagnosing, proposing,
+running a change once an operator approves — where "doctor" named one part and
+"pilot" named the seat rather than the work.
+
+  - `OPSPILOT_*`, then `OPSDOCTOR_*`, then `OSS_*`, are read when the
+    `STEWARD_*` name is unset, so a host provisioned under any earlier name
+    starts unchanged.
+  - Stored identifiers keep their old spelling, because existing bases hold
+    them: the ontology schema id `oss-agent-domain`, alchemy job ids
+    (`opsdoctor:<hash>`) and the default ontology name.
+  - Importers change the path: `github.com/liliang-cn/opspilot` →
+    `github.com/liliang-cn/steward`, and the package identifier `opspilot.` →
+    `steward.`.
+  - `steward version` reports the release. The constant had been left at
+    0.43.0 through the eight releases since (v0.44.0 to v0.50.0), so every one
+    of them said it was 0.43.0.
+  - cortexdb v2.111.1 → v2.113.0. Checked against a snapshot of the live SDS
+    knowledge base: `doctor` reports the same store, recall depth and drift
+    before and after, word for word.
+
 ## v0.50.0 — 2026-09-28
 
 Renamed opsdoctor → **opspilot**: module `github.com/liliang-cn/opspilot`, root

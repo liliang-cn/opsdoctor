@@ -1,11 +1,11 @@
-# opspilot — build / dev / deploy
+# steward — build / dev / deploy
 # The committed web/dist is embedded into the binary, so `build` does NOT require
 # Node. Run `make web` only after changing the front-end.
 
-BIN        := opspilot
+BIN        := steward
 HOST       ?= linode-jp
-REMOTE_DIR ?= /opt/opspilot
-DIST       := dist/opspilot-linux-amd64
+REMOTE_DIR ?= /opt/steward
+DIST       := dist/steward-linux-amd64
 
 .PHONY: build web build-linux run fmt vet test check deploy clean help
 
@@ -13,15 +13,15 @@ help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
 
 build: ## build local binary (uses committed web/dist)
-	go build -o $(BIN) ./cmd/opspilot
+	go build -o $(BIN) ./cmd/steward
 
 web: ## rebuild the embedded web UI (after front-end changes)
 	cd web && npm install && npm run build
 
 build-linux: ## cross-compile a static linux/amd64 binary (embeds web/dist)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(DIST) ./cmd/opspilot
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(DIST) ./cmd/steward
 
-run: build ## build + serve locally (expects OPSPILOT_* env set)
+run: build ## build + serve locally (expects STEWARD_* env set)
 	./$(BIN) serve
 
 fmt: ## gofmt the source
@@ -37,8 +37,8 @@ check: fmt vet test ## fmt + vet + test
 
 deploy: build-linux ## cross-compile + push binary + restart service on HOST (must be provisioned; see docs/ONBOARDING.md)
 	ssh $(HOST) 'mkdir -p $(REMOTE_DIR)'
-	scp -q $(DIST) $(HOST):$(REMOTE_DIR)/opspilot.new
-	ssh $(HOST) 'chmod +x $(REMOTE_DIR)/opspilot.new && mv $(REMOTE_DIR)/opspilot.new $(REMOTE_DIR)/opspilot && systemctl restart $(BIN) && sleep 3 && systemctl is-active $(BIN)'
+	scp -q $(DIST) $(HOST):$(REMOTE_DIR)/steward.new
+	ssh $(HOST) 'chmod +x $(REMOTE_DIR)/steward.new && mv $(REMOTE_DIR)/steward.new $(REMOTE_DIR)/steward && systemctl restart $(BIN) && sleep 3 && systemctl is-active $(BIN)'
 
 push-db: ## copy the local knowledge DB to HOST (rebuild-free deploy of the index)
 	scp -q data/knowledge.db $(HOST):$(REMOTE_DIR)/data/knowledge.db

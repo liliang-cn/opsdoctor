@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/liliang-cn/opspilot/internal/knowledge"
-	"github.com/liliang-cn/opspilot/internal/schemaimport"
+	"github.com/liliang-cn/steward/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/schemaimport"
 )
 
 // Field is one member of an object (name + the type token used for ref resolution).

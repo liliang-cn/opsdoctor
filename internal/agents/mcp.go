@@ -19,7 +19,7 @@ import (
 )
 
 // MCPSpec describes one external MCP server to mount. It mirrors the public
-// opspilot.MCPServerSpec so internal packages never import the root facade.
+// steward.MCPServerSpec so internal packages never import the root facade.
 type MCPSpec struct {
 	Name              string
 	Transport         string // "stdio" | "http" | "sse"

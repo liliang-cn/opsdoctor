@@ -1,4 +1,4 @@
-module github.com/liliang-cn/opspilot
+module github.com/liliang-cn/steward
 
 go 1.25.5
 

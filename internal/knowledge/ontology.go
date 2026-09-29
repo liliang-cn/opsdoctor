@@ -231,7 +231,7 @@ func (s *Store) noteExtractionVocabulary(ctx context.Context) {
 	if _, err := s.db.SaveOntologySchema(ctx, cortexdb.OntologySaveRequest{
 		Activate: true, Schema: *stored,
 	}); err != nil {
-		log.Printf("[opspilot] knowledge: recording the extraction vocabulary failed: %v", err)
+		log.Printf("[steward] knowledge: recording the extraction vocabulary failed: %v", err)
 	}
 }
 
@@ -502,7 +502,7 @@ func (s *Store) seedsByName(ctx context.Context, query string, limit int) []stri
 			Limit:     limit,
 		})
 		if err != nil {
-			log.Printf("[opspilot] knowledge: name seeding failed: %v", err)
+			log.Printf("[steward] knowledge: name seeding failed: %v", err)
 			return
 		}
 		for _, m := range res.Matches {
@@ -677,7 +677,7 @@ func (s *Store) DriftReport(ctx context.Context) (*OntologyDrift, error) {
 	}
 	d.MisdirectedEdges = misdirected
 	if nodes, err := s.misdirectedNodes(ctx); err != nil {
-		log.Printf("[opspilot] knowledge: finding the nodes behind misdirected edges failed: %v", err)
+		log.Printf("[steward] knowledge: finding the nodes behind misdirected edges failed: %v", err)
 	} else {
 		d.MisdirectedNodes = nodes
 	}
@@ -949,7 +949,7 @@ func (s *Store) keepDeclaredTypes(ctx context.Context, ents []cortexdb.ToolEntit
 	}
 	nodes, err := s.db.Graph().GetNodesBatch(ctx, ids)
 	if err != nil {
-		log.Printf("[opspilot] knowledge: checking declared types failed, an unspecified mention may demote one: %v", err)
+		log.Printf("[steward] knowledge: checking declared types failed, an unspecified mention may demote one: %v", err)
 		return
 	}
 	for _, n := range nodes {

@@ -1,6 +1,6 @@
 # Onboarding a new project → a deployed agent
 
-opspilot is product-agnostic: the engine never changes. Bringing a new OSS
+steward is product-agnostic: the engine never changes. Bringing a new OSS
 project online is a repeatable pipeline whose only product-specific input is a
 `domain.toml`. This is the standardized process.
 
@@ -27,15 +27,15 @@ The engine has no compiled-in product knowledge. A worked example
     used to build the index — the LLM can be swapped at any time, the embedder
     cannot.)
 - For code-graph ingestion: the [Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)
-  `/understand` skill reachable via `OPSPILOT_UNDERSTAND_CMD` (e.g. `claude -p "/understand ." --dangerously-skip-permissions`).
+  `/understand` skill reachable via `STEWARD_UNDERSTAND_CMD` (e.g. `claude -p "/understand ." --dangerously-skip-permissions`).
 
 Environment used throughout (export once):
 
 ```bash
-export OPSPILOT_DOMAIN_FILE=examples/example/domain.toml
-export OPSPILOT_LLM_API_KEY=<key>   OPSPILOT_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSPILOT_LLM_MODEL=gemini-3.8-flash-high
-export OPSPILOT_EMB_API_KEY=<key>   OPSPILOT_EMB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  OPSPILOT_EMB_MODEL=text-embedding-v4  OPSPILOT_EMB_DIM=1024
-export OPSPILOT_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissions'
+export STEWARD_DOMAIN_FILE=examples/example/domain.toml
+export STEWARD_LLM_API_KEY=<key>   STEWARD_LLM_BASE_URL=https://cpa.superleo.app/v1  STEWARD_LLM_MODEL=gemini-3.8-flash-high
+export STEWARD_EMB_API_KEY=<key>   STEWARD_EMB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  STEWARD_EMB_MODEL=text-embedding-v4  STEWARD_EMB_DIM=1024
+export STEWARD_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-permissions'
 ```
 
 ---
@@ -45,7 +45,7 @@ export OPSPILOT_UNDERSTAND_CMD='claude -p "/understand ." --dangerously-skip-per
 **Fast start — let the LLM draft it:**
 
 ```bash
-opspilot init https://github.com/<org>/<repo>   # clone + LLM → domain.generated.toml
+steward init https://github.com/<org>/<repo>   # clone + LLM → domain.generated.toml
 ```
 
 `init` inspects the repo (README, top-level layout, dominant languages) and drafts
@@ -66,7 +66,7 @@ the draft** — especially `[[red_lines]]` (the destructive-command safety wall)
 | `repos` | upstream repos to ingest |
 | `[[red_lines]]` | destructive-command blocks (the deterministic safety wall) |
 
-`opspilot domain` prints the loaded config to verify the TOML.
+`steward domain` prints the loaded config to verify the TOML.
 
 ---
 
@@ -78,7 +78,7 @@ object model) and **semantic vectors** (for retrieval).
 **a) Code repos → graph** (one command per repo, fully automatic):
 
 ```bash
-opspilot ingest-repo https://github.com/<org>/<repo>      # clone → /understand → import-graph
+steward ingest-repo https://github.com/<org>/<repo>      # clone → /understand → import-graph
 ```
 
 If `/understand` stalls on a huge repo (no final `knowledge-graph.json`),
@@ -87,20 +87,20 @@ If `/understand` stalls on a huge repo (no final `knowledge-graph.json`),
 imports that. To redo it explicitly on an existing clone:
 
 ```bash
-opspilot salvage repos/<repo>     # rebuild + import from intermediate batches, no re-run
+steward salvage repos/<repo>     # rebuild + import from intermediate batches, no re-run
 ```
 
 **b) Docs / KB / blog → semantic vectors** (point at a dir of .md/.adoc):
 
 ```bash
-opspilot ingest-repo repos/<docs-dir>     # no knowledge-graph.json → text/semantic ingest
+steward ingest-repo repos/<docs-dir>     # no knowledge-graph.json → text/semantic ingest
 ```
 
 **c) Object model → graph** (deterministic, no LLM). Use whatever structured
 source the project ships — this is the precise ontology, don't mine it from prose:
 
 ```bash
-opspilot import-model path/to/source     # auto-detects format → entities + REFERENCES
+steward import-model path/to/source     # auto-detects format → entities + REFERENCES
 ```
 
 > Adapters (pick the one matching the project's source-of-truth):
@@ -118,35 +118,35 @@ opspilot import-model path/to/source     # auto-detects format → entities + RE
 **d) Verify:**
 
 ```bash
-opspilot search "<concept>"          # vector + keyword
-opspilot search-graph "<concept>"    # + one-hop graph expansion
-opspilot ask "<question>"            # full agent (probes + knowledge_search + red-line wall)
+steward search "<concept>"          # vector + keyword
+steward search-graph "<concept>"    # + one-hop graph expansion
+steward ask "<question>"            # full agent (probes + knowledge_search + red-line wall)
 ```
 
 **Updating a source later** (catches deletions, no full rebuild):
 
 ```bash
-opspilot refresh <repo-or-dir>
+steward refresh <repo-or-dir>
 ```
 
 ---
 
 ### 2.x Extract through alchemy (optional)
 
-Point `OPSPILOT_ALCHEMY_ADDR` (and `_TOKEN`) at an alchemy service and every
+Point `STEWARD_ALCHEMY_ADDR` (and `_TOKEN`) at an alchemy service and every
 `ingest` / `ingest-repo` / `refresh` reads prose through it: one job per
 document, the domain's vocabulary translated into alchemy's ontology, and the
 result written with provenance on every node and edge. A document alchemy holds
 for review is logged with the job id and the conflict's subject, keeps its
 vectors, and gets its graph on the next `refresh` after the review is answered.
-The LLM alchemy extracts with is the one in `OPSPILOT_LLM_*`; no embedder is
-sent, the store embeds its own chunks. `opspilot doctor` has an `alchemy` line.
+The LLM alchemy extracts with is the one in `STEWARD_LLM_*`; no embedder is
+sent, the store embeds its own chunks. `steward doctor` has an `alchemy` line.
 
 ## 3. Run locally
 
 ```bash
-make run            # = go build + ./opspilot serve   (API under /api/*, UI at /)
-# or:  opspilot ui   (also opens the browser)
+make run            # = go build + ./steward serve   (API under /api/*, UI at /)
+# or:  steward ui   (also opens the browser)
 ```
 
 Open `http://localhost:7634`. Without an LLM key it serves search-only.
@@ -161,35 +161,35 @@ deps** (no ollama). First-time provisioning is below; updates are `make deploy`.
 ### 4.1 First-time provision (on the server, once)
 
 ```bash
-ssh HOST 'mkdir -p /opt/opspilot/data'
-scp domain.toml HOST:/opt/opspilot/domain.toml
-scp data/knowledge.db HOST:/opt/opspilot/data/knowledge.db   # ship the prebuilt index
+ssh HOST 'mkdir -p /opt/steward/data'
+scp domain.toml HOST:/opt/steward/domain.toml
+scp data/knowledge.db HOST:/opt/steward/data/knowledge.db   # ship the prebuilt index
 
 # env (root-only)
-ssh HOST 'cat > /opt/opspilot/opspilot.env <<ENV
-OPSPILOT_DOMAIN_FILE=/opt/opspilot/domain.toml
-OPSPILOT_KNOWLEDGE_DB_PATH=/opt/opspilot/data/knowledge.db
-OPSPILOT_DB_PATH=/opt/opspilot/data/opspilot.db
-OPSPILOT_HTTP_ADDR=127.0.0.1:47634
-OPSPILOT_LLM_API_KEY=...      OPSPILOT_LLM_BASE_URL=https://cpa.superleo.app/v1  OPSPILOT_LLM_MODEL=gemini-3.8-flash-high
-OPSPILOT_EMB_API_KEY=...      OPSPILOT_EMB_BASE_URL=...  OPSPILOT_EMB_MODEL=text-embedding-v4  OPSPILOT_EMB_DIM=1024
-OPSPILOT_RATE_LIMIT_PER_MIN=30
+ssh HOST 'cat > /opt/steward/steward.env <<ENV
+STEWARD_DOMAIN_FILE=/opt/steward/domain.toml
+STEWARD_KNOWLEDGE_DB_PATH=/opt/steward/data/knowledge.db
+STEWARD_DB_PATH=/opt/steward/data/steward.db
+STEWARD_HTTP_ADDR=127.0.0.1:47634
+STEWARD_LLM_API_KEY=...      STEWARD_LLM_BASE_URL=https://cpa.superleo.app/v1  STEWARD_LLM_MODEL=gemini-3.8-flash-high
+STEWARD_EMB_API_KEY=...      STEWARD_EMB_BASE_URL=...  STEWARD_EMB_MODEL=text-embedding-v4  STEWARD_EMB_DIM=1024
+STEWARD_RATE_LIMIT_PER_MIN=30
 ENV
-chmod 600 /opt/opspilot/opspilot.env'
+chmod 600 /opt/steward/steward.env'
 ```
 
-systemd unit `/etc/systemd/system/opspilot.service`:
+systemd unit `/etc/systemd/system/steward.service`:
 
 ```ini
 [Unit]
-Description=opspilot
+Description=steward
 After=network-online.target
 Wants=network-online.target
 [Service]
 Type=simple
-WorkingDirectory=/opt/opspilot
-EnvironmentFile=/opt/opspilot/opspilot.env
-ExecStart=/opt/opspilot/opspilot serve
+WorkingDirectory=/opt/steward
+EnvironmentFile=/opt/steward/steward.env
+ExecStart=/opt/steward/steward serve
 Restart=on-failure
 RestartSec=3
 [Install]
@@ -197,17 +197,20 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-ssh HOST 'systemctl daemon-reload && systemctl enable --now opspilot'
+ssh HOST 'systemctl daemon-reload && systemctl enable --now steward'
 ```
 
-### 4.1a A host provisioned as oss-agent
+### 4.1a A host provisioned under an old name
 
-The program was called oss-agent until v0.38.0. A host set up under that name
-keeps working as it is: the binary reads every `OPSPILOT_*` variable and falls
-back to the `OSS_*` name, so the old env file needs no edit. Only the deploy
-target moved — `make deploy` now ships to `/opt/opspilot` and restarts the
-`opspilot` unit. Either re-provision under the new name (above), or keep the
-old layout with `make deploy REMOTE_DIR=/opt/oss-agent BIN=oss-agent`.
+The program was called opspilot until v0.51.0, opsdoctor until v0.50.0 and
+oss-agent until v0.38.0. A host set up under any of those names keeps working as
+it is: the binary reads every `STEWARD_*` variable and falls back to the
+`OPSPILOT_*`, then `OPSDOCTOR_*`, then `OSS_*` name, so the old env file needs no
+edit. Only the deploy
+target moved — `make deploy` now ships to `/opt/steward` and restarts the
+`steward` unit. Either re-provision under the new name (above), or keep the
+old layout with `make deploy REMOTE_DIR=/opt/<old-name> BIN=<old-name>` (e.g.
+`opspilot`, `opsdoctor` or `oss-agent`).
 
 ### 4.2 Caddy: TLS + basic auth + reverse proxy
 
@@ -240,7 +243,7 @@ Point DNS `oss.example.com A → <server ip>`; Caddy auto-provisions the cert.
 
 Built into the app: per-IP sliding-window cap on the LLM endpoints
 (`/ask`, `/ask/stream`, `/diagnose`, `/chat`, `/chat/stream`, `/analyze-log`),
-returns 429 when exceeded. Configure with `OPSPILOT_RATE_LIMIT_PER_MIN` (default 30,
+returns 429 when exceeded. Configure with `STEWARD_RATE_LIMIT_PER_MIN` (default 30,
 `0` = unlimited). Read-only/static endpoints are not limited.
 
 ### 4.4 Updates
@@ -256,17 +259,17 @@ make push-db HOST=<host>    # ship a freshly rebuilt knowledge.db
 
 | var | default | purpose |
 |---|---|---|
-| `OPSPILOT_DOMAIN_FILE` | `./domain.toml` | active product config |
-| `OPSPILOT_LLM_API_KEY` / `_BASE_URL` / `_MODEL` | — / OpenAI / `gpt-4o` | reasoning LLM |
-| `OPSPILOT_EMB_API_KEY` / `_BASE_URL` / `_MODEL` / `_DIM` | (LLM creds) / `text-embedding-3-small` / 1536 | embedder (must match the index) |
-| `OPSPILOT_KNOWLEDGE_DB_PATH` | `./data/knowledge.db` | cortexdb knowledge base |
-| `OPSPILOT_DB_PATH` | `./data/opspilot.db` | agent-go session store |
-| `OPSPILOT_HTTP_ADDR` | `:7634` | serve listen address |
-| `OPSPILOT_CONV_MEMORY` | `on` | cross-session chat memory |
-| `OPSPILOT_RATE_LIMIT_PER_MIN` | `30` | per-IP LLM-endpoint cap (0 = off) |
-| `OPSPILOT_UNDERSTAND_CMD` | — | command to produce knowledge-graph.json |
-| `OPSPILOT_ALCHEMY_ADDR` | — | alchemy gRPC address; prose extraction goes through alchemy when set |
-| `OPSPILOT_ALCHEMY_TOKEN` / `_TLS` | — / off | its bearer token; TLS on request |
+| `STEWARD_DOMAIN_FILE` | `./domain.toml` | active product config |
+| `STEWARD_LLM_API_KEY` / `_BASE_URL` / `_MODEL` | — / OpenAI / `gpt-4o` | reasoning LLM |
+| `STEWARD_EMB_API_KEY` / `_BASE_URL` / `_MODEL` / `_DIM` | (LLM creds) / `text-embedding-3-small` / 1536 | embedder (must match the index) |
+| `STEWARD_KNOWLEDGE_DB_PATH` | `./data/knowledge.db` | cortexdb knowledge base |
+| `STEWARD_DB_PATH` | `./data/steward.db` | agent-go session store |
+| `STEWARD_HTTP_ADDR` | `:7634` | serve listen address |
+| `STEWARD_CONV_MEMORY` | `on` | cross-session chat memory |
+| `STEWARD_RATE_LIMIT_PER_MIN` | `30` | per-IP LLM-endpoint cap (0 = off) |
+| `STEWARD_UNDERSTAND_CMD` | — | command to produce knowledge-graph.json |
+| `STEWARD_ALCHEMY_ADDR` | — | alchemy gRPC address; prose extraction goes through alchemy when set |
+| `STEWARD_ALCHEMY_TOKEN` / `_TLS` | — / off | its bearer token; TLS on request |
 
 ---
 
@@ -277,7 +280,7 @@ make push-db HOST=<host>    # ship a freshly rebuilt knowledge.db
   (domain.toml-driven), deploy (`make deploy`).
 - **Finite adapters, pick one**: object-model extraction from a structured source
   (`import-model`: SQL / proto / OpenAPI / C-struct).
-- **LLM-assisted, human-reviewed**: drafting `domain.toml` (`opspilot init`).
+- **LLM-assisted, human-reviewed**: drafting `domain.toml` (`steward init`).
 - **Irreducible human input**: reviewing/owning the `domain.toml` — above all the
   `red_lines` safety wall — and choosing which structured source is the object
   model. Everything else is the pipeline above.

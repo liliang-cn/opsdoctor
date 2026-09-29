@@ -18,16 +18,16 @@ import (
 	agdomain "github.com/liliang-cn/agent-go/v3/pkg/domain"
 	"github.com/liliang-cn/agent-go/v3/pkg/providers"
 
-	"github.com/liliang-cn/opspilot/internal/alchemyclient"
-	"github.com/liliang-cn/opspilot/internal/cite"
-	"github.com/liliang-cn/opspilot/internal/config"
-	"github.com/liliang-cn/opspilot/internal/domain"
-	"github.com/liliang-cn/opspilot/internal/extract"
-	"github.com/liliang-cn/opspilot/internal/graphimport"
-	"github.com/liliang-cn/opspilot/internal/knowledge"
-	"github.com/liliang-cn/opspilot/internal/probes"
-	"github.com/liliang-cn/opspilot/internal/safety"
-	"github.com/liliang-cn/opspilot/internal/schemaimport"
+	"github.com/liliang-cn/steward/internal/alchemyclient"
+	"github.com/liliang-cn/steward/internal/cite"
+	"github.com/liliang-cn/steward/internal/config"
+	"github.com/liliang-cn/steward/internal/domain"
+	"github.com/liliang-cn/steward/internal/extract"
+	"github.com/liliang-cn/steward/internal/graphimport"
+	"github.com/liliang-cn/steward/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/probes"
+	"github.com/liliang-cn/steward/internal/safety"
+	"github.com/liliang-cn/steward/internal/schemaimport"
 )
 
 // LLM builds a bare LLM generator from config (used by scaffolding/extraction
@@ -119,7 +119,7 @@ func AlchemyExtractor(cfg config.Config, dom *domain.Domain) (*alchemyclient.Ext
 		LLM: alchemyclient.Endpoint{Model: cfg.LLMModel, BaseURL: cfg.LLMBaseURL, APIKey: cfg.LLMAPIKey},
 	}, dom)
 	if err != nil {
-		return nil, fmt.Errorf("alchemy (OPSPILOT_ALCHEMY_ADDR=%s): %w", cfg.AlchemyAddr, err)
+		return nil, fmt.Errorf("alchemy (STEWARD_ALCHEMY_ADDR=%s): %w", cfg.AlchemyAddr, err)
 	}
 	return ex, nil
 }
@@ -190,7 +190,7 @@ func Build(cfg config.Config, dom *domain.Domain) (*agent.Service, *knowledge.St
 	// feature outright, so plain function-calling is now the only mode: still
 	// iterative ReAct tool use, still a single clean text answer in FinalResult,
 	// which is the shape an ask/diagnose agent wants.
-	svc, err := agent.New("opspilot").
+	svc, err := agent.New("steward").
 		WithSystemPrompt(dom.Persona + groundingDirective + citationDirective).
 		WithLLM(llm).
 		WithEmbedder(emb).

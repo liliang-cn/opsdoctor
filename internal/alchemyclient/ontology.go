@@ -11,7 +11,7 @@ import (
 
 	"github.com/liliang-cn/alchemy/pkg/ontology"
 
-	"github.com/liliang-cn/opspilot/internal/domain"
+	"github.com/liliang-cn/steward/internal/domain"
 )
 
 // OntologyFor translates the domain's prose vocabulary into the ontology

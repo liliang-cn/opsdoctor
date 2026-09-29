@@ -13,10 +13,10 @@ import (
 
 	"github.com/liliang-cn/agent-go/v3/pkg/llm"
 
-	"github.com/liliang-cn/opspilot/internal/agents"
-	"github.com/liliang-cn/opspilot/internal/cite"
-	"github.com/liliang-cn/opspilot/internal/config"
-	"github.com/liliang-cn/opspilot/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/agents"
+	"github.com/liliang-cn/steward/internal/cite"
+	"github.com/liliang-cn/steward/internal/config"
+	"github.com/liliang-cn/steward/internal/knowledge"
 )
 
 // evalCase is one row of an eval dataset: a question to ask the agent. Expected
@@ -52,7 +52,7 @@ func runEval(args []string) {
 		dsArg = fs.Arg(0)
 	}
 	if dsArg == "" {
-		fail("usage: opspilot eval <dataset.json> [-k 4] [-out report.json] [-fail-under 0.8]\n" +
+		fail("usage: steward eval <dataset.json> [-k 4] [-out report.json] [-fail-under 0.8]\n" +
 			"  dataset: a JSON array of {name, question, category?, meta?} (or {\"cases\":[...]})")
 	}
 

@@ -1,4 +1,4 @@
-// Package domain is the platform's product-agnostic seam. opspilot is a generic
+// Package domain is the platform's product-agnostic seam. steward is a generic
 // engine; each project that uses it describes ITS OWN product in a domain.toml
 // config — persona, ontology vocabulary, source error patterns, read-only probes,
 // and repos. No product is compiled into the platform; a worked example config
@@ -12,8 +12,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/liliang-cn/opspilot/internal/probes"
-	"github.com/liliang-cn/opspilot/internal/safety"
+	"github.com/liliang-cn/steward/internal/probes"
+	"github.com/liliang-cn/steward/internal/safety"
 )
 
 // Domain bundles the product-specific knowledge that shapes the agent. It is
@@ -70,7 +70,7 @@ type Domain struct {
 // table header, so it ends the top-level section. Written next to
 // relation_types — where it reads best — it silently absorbs every top-level key
 // below it, and error_patterns and repos load as keys of a relation nobody
-// reads. Nothing fails. `opspilot domain` prints the relation-ends count beside
+// reads. Nothing fails. `steward domain` prints the relation-ends count beside
 // the others so the swallowed one shows up as a zero.
 type Relation struct {
 	Name string  `toml:"name"`

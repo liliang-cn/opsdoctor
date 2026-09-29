@@ -1,9 +1,9 @@
-package opspilot
+package steward
 
 import (
 	"testing"
 
-	"github.com/liliang-cn/opspilot/internal/agents"
+	"github.com/liliang-cn/steward/internal/agents"
 )
 
 // bare builds just enough Agent to exercise SetLLM: the swap handle and the key

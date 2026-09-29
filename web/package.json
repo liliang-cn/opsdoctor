@@ -1,5 +1,5 @@
 {
-  "name": "opspilot-web",
+  "name": "steward-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -1,4 +1,4 @@
-package opspilot
+package steward
 
 import (
 	"context"

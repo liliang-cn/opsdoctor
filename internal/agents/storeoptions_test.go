@@ -3,8 +3,8 @@ package agents
 import (
 	"testing"
 
-	"github.com/liliang-cn/opspilot/internal/domain"
-	"github.com/liliang-cn/opspilot/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/domain"
+	"github.com/liliang-cn/steward/internal/knowledge"
 )
 
 // The imported vocabulary the store learns is everything an importer may

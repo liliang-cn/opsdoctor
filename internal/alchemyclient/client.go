@@ -30,8 +30,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/liliang-cn/opspilot/internal/domain"
-	"github.com/liliang-cn/opspilot/internal/knowledge"
+	"github.com/liliang-cn/steward/internal/domain"
+	"github.com/liliang-cn/steward/internal/knowledge"
 )
 
 // Endpoint is an OpenAI-compatible model alchemy calls on the job's behalf.
@@ -140,7 +140,7 @@ func (e *Extractor) Close() error {
 // Ping asks alchemy for a job that does not exist. NotFound is the healthy
 // answer — it means the server was reached and the token was accepted.
 func (e *Extractor) Ping(ctx context.Context) error {
-	_, err := e.api.GetJob(e.auth(ctx), &alchemyv1.GetJobRequest{JobId: "opspilot-ping"})
+	_, err := e.api.GetJob(e.auth(ctx), &alchemyv1.GetJobRequest{JobId: "steward-ping"})
 	switch status.Code(err) {
 	case codes.OK, codes.NotFound:
 		return nil
@@ -160,7 +160,7 @@ func (e *Extractor) auth(ctx context.Context) context.Context {
 func (e *Extractor) explain(err error) error {
 	switch status.Code(err) {
 	case codes.Unauthenticated, codes.PermissionDenied:
-		return fmt.Errorf("alchemy at %s refused the token (OPSPILOT_ALCHEMY_TOKEN): %w", e.cfg.Addr, err)
+		return fmt.Errorf("alchemy at %s refused the token (STEWARD_ALCHEMY_TOKEN): %w", e.cfg.Addr, err)
 	case codes.Unavailable:
 		return fmt.Errorf("alchemy at %s is unreachable: %w", e.cfg.Addr, err)
 	}
