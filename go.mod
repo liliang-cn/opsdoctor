@@ -6,11 +6,12 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/liliang-cn/agent-go/v3 v3.33.0
 	github.com/liliang-cn/alchemy v0.7.7
-	github.com/liliang-cn/cortexdb/v2 v2.111.1
+	github.com/liliang-cn/cortexdb/v2 v2.113.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/cayleygraph/quad v1.3.0 // indirect
 	github.com/getkin/kin-openapi v0.140.0 // indirect
 	github.com/go-openapi/swag/pools v0.28.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
@@ -21,6 +22,8 @@ require (
 	github.com/liliang-cn/agentexec v0.5.0 // indirect
 	github.com/oasdiff/yaml v0.1.0 // indirect
 	github.com/oasdiff/yaml3 v0.0.13 // indirect
+	github.com/piprate/json-gold v0.8.0 // indirect
+	github.com/pquerna/cachecontrol v0.2.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
