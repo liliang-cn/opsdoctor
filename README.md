@@ -220,3 +220,7 @@ model/dimension (e.g. the extracted `drbd-reactor.db` is `text-embedding-v4` / 1
 
 Config is env-first, so a process configured via `STEWARD_*` can call
 `steward.New(steward.Config{})`. A runnable example lives in `examples/lib/`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -89,7 +89,7 @@ require (
 	github.com/json-iterator/go v0.0.0-20171115153421-f7279a603ede // indirect
 	github.com/liliang-cn/eval-go v0.5.0
 	github.com/liliang-cn/mcp-swagger-server v1.3.0 // indirect
-	github.com/liliang-cn/pipeit v0.1.0 // indirect
+	github.com/liliang-cn/pipeit v0.1.1 // indirect
 	github.com/liliang-cn/skills-go v1.9.0 // indirect
 	github.com/mark3labs/mcp-go v1.0.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
